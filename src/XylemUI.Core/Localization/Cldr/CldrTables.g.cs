@@ -80,6 +80,8 @@ internal static class CldrData
     public const int DateNameTableCount = 149;
     /// <summary>Gets the number of distinct date pattern tables.</summary>
     public const int DatePatternTableCount = 168;
+    /// <summary>Gets the number of distinct date interval tables.</summary>
+    public const int DateIntervalTableCount = 165;
 }
 
 /// <summary>
@@ -546,6 +548,9 @@ internal sealed class CldrRoot : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns0;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -576,6 +581,9 @@ internal sealed class CldrAf : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns1;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals1;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal1);
@@ -610,6 +618,9 @@ internal sealed class CldrAfNA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns2;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals2;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal1);
 }
 
@@ -640,6 +651,9 @@ internal sealed class CldrAk : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns3;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals3;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal2, CldrPluralRules.Ordinal0);
@@ -674,6 +688,9 @@ internal sealed class CldrAm : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns4;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals4;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
 }
 
@@ -704,6 +721,9 @@ internal sealed class CldrAr : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -738,6 +758,9 @@ internal sealed class CldrArAE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns5;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -768,6 +791,9 @@ internal sealed class CldrArBH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -802,6 +828,9 @@ internal sealed class CldrArDJ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -832,6 +861,9 @@ internal sealed class CldrArDZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -866,6 +898,9 @@ internal sealed class CldrArEG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -896,6 +931,9 @@ internal sealed class CldrArEH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -930,6 +968,9 @@ internal sealed class CldrArER : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -960,6 +1001,9 @@ internal sealed class CldrArIL : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns7;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals6;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -994,6 +1038,9 @@ internal sealed class CldrArIQ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1024,6 +1071,9 @@ internal sealed class CldrArJO : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1058,6 +1108,9 @@ internal sealed class CldrArKM : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns7;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals6;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1088,6 +1141,9 @@ internal sealed class CldrArKW : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1122,6 +1178,9 @@ internal sealed class CldrArLB : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1152,6 +1211,9 @@ internal sealed class CldrArLY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1186,6 +1248,9 @@ internal sealed class CldrArMA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns8;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals6;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1216,6 +1281,9 @@ internal sealed class CldrArMR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1250,6 +1318,9 @@ internal sealed class CldrArOM : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1280,6 +1351,9 @@ internal sealed class CldrArPS : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1314,6 +1388,9 @@ internal sealed class CldrArQA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1344,6 +1421,9 @@ internal sealed class CldrArSA : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1378,6 +1458,9 @@ internal sealed class CldrArSD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1408,6 +1491,9 @@ internal sealed class CldrArSO : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1442,6 +1528,9 @@ internal sealed class CldrArSS : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1472,6 +1561,9 @@ internal sealed class CldrArSY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1506,6 +1598,9 @@ internal sealed class CldrArTD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1536,6 +1631,9 @@ internal sealed class CldrArTN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns5;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
@@ -1570,6 +1668,9 @@ internal sealed class CldrArYE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns6;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals5;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal4, CldrPluralRules.Ordinal0);
 }
 
@@ -1600,6 +1701,9 @@ internal sealed class CldrAs : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns9;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals7;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal2);
@@ -1634,6 +1738,9 @@ internal sealed class CldrAz : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns10;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals8;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal3);
 }
 
@@ -1664,6 +1771,9 @@ internal sealed class CldrAzLatn : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns10;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals8;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal3);
@@ -1698,6 +1808,9 @@ internal sealed class CldrBe : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns11;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals9;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal5, CldrPluralRules.Ordinal4);
 }
 
@@ -1728,6 +1841,9 @@ internal sealed class CldrBg : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns12;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals10;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal5);
@@ -1762,6 +1878,9 @@ internal sealed class CldrBn : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns13;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals11;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal2);
 }
 
@@ -1792,6 +1911,9 @@ internal sealed class CldrBnIN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns14;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals11;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal2);
@@ -1826,6 +1948,9 @@ internal sealed class CldrBo : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns15;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals0;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -1856,6 +1981,9 @@ internal sealed class CldrBs : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns16;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals12;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -1890,6 +2018,9 @@ internal sealed class CldrBsLatn : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns16;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals12;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -1920,6 +2051,9 @@ internal sealed class CldrCa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals13;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
@@ -1954,6 +2088,9 @@ internal sealed class CldrCaAD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns17;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals13;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
 }
 
@@ -1984,6 +2121,9 @@ internal sealed class CldrCaFR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns17;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals13;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
@@ -2018,6 +2158,9 @@ internal sealed class CldrCaIT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns17;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals13;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal6);
 }
 
@@ -2048,6 +2191,9 @@ internal sealed class CldrChr : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns18;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals14;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -2082,6 +2228,9 @@ internal sealed class CldrCs : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns19;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals15;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal8, CldrPluralRules.Ordinal0);
 }
 
@@ -2112,6 +2261,9 @@ internal sealed class CldrCv : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns20;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals16;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal9, CldrPluralRules.Ordinal0);
@@ -2146,6 +2298,9 @@ internal sealed class CldrCy : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns21;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals17;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal10, CldrPluralRules.Ordinal7);
 }
 
@@ -2176,6 +2331,9 @@ internal sealed class CldrDa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns22;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals18;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal11, CldrPluralRules.Ordinal0);
@@ -2210,6 +2368,9 @@ internal sealed class CldrDaGL : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns22;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals18;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal11, CldrPluralRules.Ordinal0);
 }
 
@@ -2240,6 +2401,9 @@ internal sealed class CldrDe : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals19;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -2274,6 +2438,9 @@ internal sealed class CldrDeAT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals19;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -2304,6 +2471,9 @@ internal sealed class CldrDeBE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals19;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -2338,6 +2508,9 @@ internal sealed class CldrDeCH : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals20;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -2368,6 +2541,9 @@ internal sealed class CldrDeIT : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals19;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -2402,6 +2578,9 @@ internal sealed class CldrDeLI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals19;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -2432,6 +2611,9 @@ internal sealed class CldrDeLU : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns23;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals19;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -2466,6 +2648,9 @@ internal sealed class CldrDsb : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns24;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals21;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal13, CldrPluralRules.Ordinal0);
 }
 
@@ -2496,6 +2681,9 @@ internal sealed class CldrEl : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns25;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals22;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -2530,6 +2718,9 @@ internal sealed class CldrElCY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns25;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals22;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -2560,6 +2751,9 @@ internal sealed class CldrEn : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2594,6 +2788,9 @@ internal sealed class CldrEn001 : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2624,6 +2821,9 @@ internal sealed class CldrEn150 : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2658,6 +2858,9 @@ internal sealed class CldrEnAE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns29;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals26;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2688,6 +2891,9 @@ internal sealed class CldrEnAG : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2722,6 +2928,9 @@ internal sealed class CldrEnAI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2752,6 +2961,9 @@ internal sealed class CldrEnAS : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2786,6 +2998,9 @@ internal sealed class CldrEnAT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2816,6 +3031,9 @@ internal sealed class CldrEnAU : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns30;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals27;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2850,6 +3068,9 @@ internal sealed class CldrEnBB : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2880,6 +3101,9 @@ internal sealed class CldrEnBE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns31;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals28;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2914,6 +3138,9 @@ internal sealed class CldrEnBI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns32;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals29;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -2944,6 +3171,9 @@ internal sealed class CldrEnBM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -2978,6 +3208,9 @@ internal sealed class CldrEnBS : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3008,6 +3241,9 @@ internal sealed class CldrEnBW : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns33;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3042,6 +3278,9 @@ internal sealed class CldrEnBZ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns33;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3072,6 +3311,9 @@ internal sealed class CldrEnCA : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns34;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals30;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3106,6 +3348,9 @@ internal sealed class CldrEnCC : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3136,6 +3381,9 @@ internal sealed class CldrEnCH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns35;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals31;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3170,6 +3418,9 @@ internal sealed class CldrEnCK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3200,6 +3451,9 @@ internal sealed class CldrEnCM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3234,6 +3488,9 @@ internal sealed class CldrEnCX : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3264,6 +3521,9 @@ internal sealed class CldrEnCY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3298,6 +3558,9 @@ internal sealed class CldrEnCZ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3328,6 +3591,9 @@ internal sealed class CldrEnDE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3362,6 +3628,9 @@ internal sealed class CldrEnDG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3392,6 +3661,9 @@ internal sealed class CldrEnDK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals32;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3426,6 +3698,9 @@ internal sealed class CldrEnDM : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3456,6 +3731,9 @@ internal sealed class CldrEnEE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3490,6 +3768,9 @@ internal sealed class CldrEnER : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3520,6 +3801,9 @@ internal sealed class CldrEnES : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3554,6 +3838,9 @@ internal sealed class CldrEnFI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns37;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals33;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3584,6 +3871,9 @@ internal sealed class CldrEnFJ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3618,6 +3908,9 @@ internal sealed class CldrEnFK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3648,6 +3941,9 @@ internal sealed class CldrEnFM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3682,6 +3978,9 @@ internal sealed class CldrEnFR : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3712,6 +4011,9 @@ internal sealed class CldrEnGB : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns38;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals34;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3746,6 +4048,9 @@ internal sealed class CldrEnGD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3776,6 +4081,9 @@ internal sealed class CldrEnGE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3810,6 +4118,9 @@ internal sealed class CldrEnGG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3840,6 +4151,9 @@ internal sealed class CldrEnGH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3874,6 +4188,9 @@ internal sealed class CldrEnGI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3904,6 +4221,9 @@ internal sealed class CldrEnGM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -3938,6 +4258,9 @@ internal sealed class CldrEnGS : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -3968,6 +4291,9 @@ internal sealed class CldrEnGU : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4002,6 +4328,9 @@ internal sealed class CldrEnGY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4032,6 +4361,9 @@ internal sealed class CldrEnHK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns39;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals35;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4066,6 +4398,9 @@ internal sealed class CldrEnHU : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4096,6 +4431,9 @@ internal sealed class CldrEnID : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns36;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals36;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4130,6 +4468,9 @@ internal sealed class CldrEnIE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns40;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals37;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4160,6 +4501,9 @@ internal sealed class CldrEnIL : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns41;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals38;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4194,6 +4538,9 @@ internal sealed class CldrEnIM : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4224,6 +4571,9 @@ internal sealed class CldrEnIN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns42;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals39;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4258,6 +4608,9 @@ internal sealed class CldrEnIO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4288,6 +4641,9 @@ internal sealed class CldrEnIT : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4322,6 +4678,9 @@ internal sealed class CldrEnJE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4352,6 +4711,9 @@ internal sealed class CldrEnJM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4386,6 +4748,9 @@ internal sealed class CldrEnJP : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns43;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals40;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4416,6 +4781,9 @@ internal sealed class CldrEnKE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4450,6 +4818,9 @@ internal sealed class CldrEnKI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4480,6 +4851,9 @@ internal sealed class CldrEnKN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4514,6 +4888,9 @@ internal sealed class CldrEnKY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4544,6 +4921,9 @@ internal sealed class CldrEnLC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4578,6 +4958,9 @@ internal sealed class CldrEnLR : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4608,6 +4991,9 @@ internal sealed class CldrEnLS : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4642,6 +5028,9 @@ internal sealed class CldrEnLT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4672,6 +5061,9 @@ internal sealed class CldrEnLV : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4706,6 +5098,9 @@ internal sealed class CldrEnMG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4736,6 +5131,9 @@ internal sealed class CldrEnMH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4770,6 +5168,9 @@ internal sealed class CldrEnMO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4800,6 +5201,9 @@ internal sealed class CldrEnMP : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4834,6 +5238,9 @@ internal sealed class CldrEnMS : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4864,6 +5271,9 @@ internal sealed class CldrEnMT : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns44;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4898,6 +5308,9 @@ internal sealed class CldrEnMU : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4928,6 +5341,9 @@ internal sealed class CldrEnMV : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns45;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals41;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -4962,6 +5378,9 @@ internal sealed class CldrEnMW : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -4992,6 +5411,9 @@ internal sealed class CldrEnMY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5026,6 +5448,9 @@ internal sealed class CldrEnNA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5056,6 +5481,9 @@ internal sealed class CldrEnNF : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5090,6 +5518,9 @@ internal sealed class CldrEnNG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5120,6 +5551,9 @@ internal sealed class CldrEnNL : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5154,6 +5588,9 @@ internal sealed class CldrEnNO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5184,6 +5621,9 @@ internal sealed class CldrEnNR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5218,6 +5658,9 @@ internal sealed class CldrEnNU : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5248,6 +5691,9 @@ internal sealed class CldrEnNZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns46;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals42;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5282,6 +5728,9 @@ internal sealed class CldrEnPG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5312,6 +5761,9 @@ internal sealed class CldrEnPH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5346,6 +5798,9 @@ internal sealed class CldrEnPK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5376,6 +5831,9 @@ internal sealed class CldrEnPL : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5410,6 +5868,9 @@ internal sealed class CldrEnPN : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5440,6 +5901,9 @@ internal sealed class CldrEnPR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5474,6 +5938,9 @@ internal sealed class CldrEnPT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5504,6 +5971,9 @@ internal sealed class CldrEnPW : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5538,6 +6008,9 @@ internal sealed class CldrEnRO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5568,6 +6041,9 @@ internal sealed class CldrEnRW : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5602,6 +6078,9 @@ internal sealed class CldrEnSB : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5632,6 +6111,9 @@ internal sealed class CldrEnSC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5666,6 +6148,9 @@ internal sealed class CldrEnSD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5696,6 +6181,9 @@ internal sealed class CldrEnSE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns47;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals43;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5730,6 +6218,9 @@ internal sealed class CldrEnSG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals44;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5760,6 +6251,9 @@ internal sealed class CldrEnSH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5794,6 +6288,9 @@ internal sealed class CldrEnSI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5824,6 +6321,9 @@ internal sealed class CldrEnSK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5858,6 +6358,9 @@ internal sealed class CldrEnSL : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5888,6 +6391,9 @@ internal sealed class CldrEnSS : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5922,6 +6428,9 @@ internal sealed class CldrEnSX : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -5952,6 +6461,9 @@ internal sealed class CldrEnSZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -5986,6 +6498,9 @@ internal sealed class CldrEnTC : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6016,6 +6531,9 @@ internal sealed class CldrEnTK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6050,6 +6568,9 @@ internal sealed class CldrEnTO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6080,6 +6601,9 @@ internal sealed class CldrEnTT : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6114,6 +6638,9 @@ internal sealed class CldrEnTV : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6144,6 +6671,9 @@ internal sealed class CldrEnTZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6178,6 +6708,9 @@ internal sealed class CldrEnUA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6208,6 +6741,9 @@ internal sealed class CldrEnUG : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6242,6 +6778,9 @@ internal sealed class CldrEnUM : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6272,6 +6811,9 @@ internal sealed class CldrEnVC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6306,6 +6848,9 @@ internal sealed class CldrEnVG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6336,6 +6881,9 @@ internal sealed class CldrEnVI : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals23;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6370,6 +6918,9 @@ internal sealed class CldrEnVU : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6400,6 +6951,9 @@ internal sealed class CldrEnWS : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns27;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals24;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6434,6 +6988,9 @@ internal sealed class CldrEnZA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns48;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals45;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6464,6 +7021,9 @@ internal sealed class CldrEnZM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns28;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals25;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
@@ -6498,6 +7058,9 @@ internal sealed class CldrEnZW : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns49;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals28;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal8);
 }
 
@@ -6528,6 +7091,9 @@ internal sealed class CldrEs : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns50;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals46;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6562,6 +7128,9 @@ internal sealed class CldrEs419 : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6592,6 +7161,9 @@ internal sealed class CldrEsAR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns52;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals48;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6626,6 +7198,9 @@ internal sealed class CldrEsBO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6656,6 +7231,9 @@ internal sealed class CldrEsBR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals49;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6690,6 +7268,9 @@ internal sealed class CldrEsBZ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns53;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals49;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6720,6 +7301,9 @@ internal sealed class CldrEsCL : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns54;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals50;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6754,6 +7338,9 @@ internal sealed class CldrEsCO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns55;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals51;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6784,6 +7371,9 @@ internal sealed class CldrEsCR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6818,6 +7408,9 @@ internal sealed class CldrEsCU : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6848,6 +7441,9 @@ internal sealed class CldrEsDO : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns56;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6882,6 +7478,9 @@ internal sealed class CldrEsEA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns50;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals46;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6912,6 +7511,9 @@ internal sealed class CldrEsEC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -6946,6 +7548,9 @@ internal sealed class CldrEsGQ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns50;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals46;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -6976,6 +7581,9 @@ internal sealed class CldrEsGT : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals52;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7010,6 +7618,9 @@ internal sealed class CldrEsHN : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns57;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7040,6 +7651,9 @@ internal sealed class CldrEsIC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns50;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals46;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7074,6 +7688,9 @@ internal sealed class CldrEsMX : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns58;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals53;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7104,6 +7721,9 @@ internal sealed class CldrEsNI : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7138,6 +7758,9 @@ internal sealed class CldrEsPA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns59;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals54;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7168,6 +7791,9 @@ internal sealed class CldrEsPE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7202,6 +7828,9 @@ internal sealed class CldrEsPH : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns60;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals55;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7232,6 +7861,9 @@ internal sealed class CldrEsPR : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns59;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals56;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7266,6 +7898,9 @@ internal sealed class CldrEsPY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns53;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals57;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7296,6 +7931,9 @@ internal sealed class CldrEsSV : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7330,6 +7968,9 @@ internal sealed class CldrEsUS : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns61;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals58;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7360,6 +8001,9 @@ internal sealed class CldrEsUY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns53;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals49;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
@@ -7394,6 +8038,9 @@ internal sealed class CldrEsVE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns51;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals47;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal14, CldrPluralRules.Ordinal9);
 }
 
@@ -7424,6 +8071,9 @@ internal sealed class CldrEt : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns62;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals59;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -7458,6 +8108,9 @@ internal sealed class CldrEu : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns63;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals60;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -7488,6 +8141,9 @@ internal sealed class CldrFa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns64;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals61;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
@@ -7522,6 +8178,9 @@ internal sealed class CldrFaAF : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns65;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals62;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
 }
 
@@ -7552,6 +8211,9 @@ internal sealed class CldrFi : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns66;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals63;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -7586,6 +8248,9 @@ internal sealed class CldrFil : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals64;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal15, CldrPluralRules.Ordinal10);
 }
 
@@ -7616,6 +8281,9 @@ internal sealed class CldrFr : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -7650,6 +8318,9 @@ internal sealed class CldrFrBE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -7680,6 +8351,9 @@ internal sealed class CldrFrBF : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -7714,6 +8388,9 @@ internal sealed class CldrFrBI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -7744,6 +8421,9 @@ internal sealed class CldrFrBJ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -7778,6 +8458,9 @@ internal sealed class CldrFrBL : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -7808,6 +8491,9 @@ internal sealed class CldrFrCA : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns68;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals66;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -7842,6 +8528,9 @@ internal sealed class CldrFrCD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals67;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -7872,6 +8561,9 @@ internal sealed class CldrFrCF : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -7906,6 +8598,9 @@ internal sealed class CldrFrCG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -7936,6 +8631,9 @@ internal sealed class CldrFrCH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns69;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals68;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -7970,6 +8668,9 @@ internal sealed class CldrFrCI : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8000,6 +8701,9 @@ internal sealed class CldrFrCM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8034,6 +8738,9 @@ internal sealed class CldrFrDJ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8064,6 +8771,9 @@ internal sealed class CldrFrDZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8098,6 +8808,9 @@ internal sealed class CldrFrGA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8128,6 +8841,9 @@ internal sealed class CldrFrGF : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8162,6 +8878,9 @@ internal sealed class CldrFrGN : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8192,6 +8911,9 @@ internal sealed class CldrFrGP : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8226,6 +8948,9 @@ internal sealed class CldrFrGQ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8256,6 +8981,9 @@ internal sealed class CldrFrHT : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8290,6 +9018,9 @@ internal sealed class CldrFrKM : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8320,6 +9051,9 @@ internal sealed class CldrFrLU : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8354,6 +9088,9 @@ internal sealed class CldrFrMA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8384,6 +9121,9 @@ internal sealed class CldrFrMC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8418,6 +9158,9 @@ internal sealed class CldrFrMF : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8448,6 +9191,9 @@ internal sealed class CldrFrMG : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8482,6 +9228,9 @@ internal sealed class CldrFrML : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns71;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals70;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8512,6 +9261,9 @@ internal sealed class CldrFrMQ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8546,6 +9298,9 @@ internal sealed class CldrFrMR : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8576,6 +9331,9 @@ internal sealed class CldrFrMU : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8610,6 +9368,9 @@ internal sealed class CldrFrNC : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8640,6 +9401,9 @@ internal sealed class CldrFrNE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8674,6 +9438,9 @@ internal sealed class CldrFrPF : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8704,6 +9471,9 @@ internal sealed class CldrFrPM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8738,6 +9508,9 @@ internal sealed class CldrFrRE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8768,6 +9541,9 @@ internal sealed class CldrFrRW : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8802,6 +9578,9 @@ internal sealed class CldrFrSC : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8832,6 +9611,9 @@ internal sealed class CldrFrSN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8866,6 +9648,9 @@ internal sealed class CldrFrSY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8896,6 +9681,9 @@ internal sealed class CldrFrTD : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8930,6 +9718,9 @@ internal sealed class CldrFrTG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -8960,6 +9751,9 @@ internal sealed class CldrFrTN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -8994,6 +9788,9 @@ internal sealed class CldrFrVU : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns70;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals69;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -9024,6 +9821,9 @@ internal sealed class CldrFrWF : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
@@ -9058,6 +9858,9 @@ internal sealed class CldrFrYT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns67;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals65;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal10);
 }
 
@@ -9088,6 +9891,9 @@ internal sealed class CldrGa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns72;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals71;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal17, CldrPluralRules.Ordinal10);
@@ -9122,6 +9928,9 @@ internal sealed class CldrGaGB : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns72;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals71;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal17, CldrPluralRules.Ordinal10);
 }
 
@@ -9152,6 +9961,9 @@ internal sealed class CldrGd : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns73;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals72;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal18, CldrPluralRules.Ordinal11);
@@ -9186,6 +9998,9 @@ internal sealed class CldrGl : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns74;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals73;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal0);
 }
 
@@ -9216,6 +10031,9 @@ internal sealed class CldrGsw : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns75;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals74;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -9250,6 +10068,9 @@ internal sealed class CldrGu : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns76;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals75;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal12);
 }
 
@@ -9280,6 +10101,9 @@ internal sealed class CldrHa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns77;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals76;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -9314,6 +10138,9 @@ internal sealed class CldrHaGH : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns78;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals77;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -9344,6 +10171,9 @@ internal sealed class CldrHaNE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns77;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals76;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -9378,6 +10208,9 @@ internal sealed class CldrHe : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns79;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals78;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal19, CldrPluralRules.Ordinal0);
 }
 
@@ -9408,6 +10241,9 @@ internal sealed class CldrHi : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns80;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals79;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal12);
@@ -9442,6 +10278,9 @@ internal sealed class CldrHiLatn : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns81;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals80;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal12);
 }
 
@@ -9472,6 +10311,9 @@ internal sealed class CldrHr : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns82;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals81;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -9506,6 +10348,9 @@ internal sealed class CldrHrBA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns82;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals81;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -9536,6 +10381,9 @@ internal sealed class CldrHsb : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns83;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals82;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal13, CldrPluralRules.Ordinal0);
@@ -9570,6 +10418,9 @@ internal sealed class CldrHu : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns84;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals83;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal13);
 }
 
@@ -9600,6 +10451,9 @@ internal sealed class CldrHy : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns85;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals84;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal20, CldrPluralRules.Ordinal10);
@@ -9634,6 +10488,9 @@ internal sealed class CldrId : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns86;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals85;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -9664,6 +10521,9 @@ internal sealed class CldrIg : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns87;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals86;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -9698,6 +10558,9 @@ internal sealed class CldrIs : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns88;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals87;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal21, CldrPluralRules.Ordinal0);
 }
 
@@ -9728,6 +10591,9 @@ internal sealed class CldrIt : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns89;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals88;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
@@ -9762,6 +10628,9 @@ internal sealed class CldrItCH : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns90;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals88;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
 }
 
@@ -9792,6 +10661,9 @@ internal sealed class CldrItSM : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns89;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals88;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
@@ -9826,6 +10698,9 @@ internal sealed class CldrItVA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns89;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals88;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal14);
 }
 
@@ -9856,6 +10731,9 @@ internal sealed class CldrJa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns91;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals89;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -9890,6 +10768,9 @@ internal sealed class CldrJv : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns92;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals90;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -9920,6 +10801,9 @@ internal sealed class CldrKa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns93;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals91;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal15);
@@ -9954,6 +10838,9 @@ internal sealed class CldrKk : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns94;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals92;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
 }
 
@@ -9984,6 +10871,9 @@ internal sealed class CldrKkArab : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns95;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals93;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
@@ -10018,6 +10908,9 @@ internal sealed class CldrKkCyrl : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns94;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals92;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
 }
 
@@ -10048,6 +10941,9 @@ internal sealed class CldrKkKZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns94;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals92;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal16);
@@ -10082,6 +10978,9 @@ internal sealed class CldrKm : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns96;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals94;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -10112,6 +11011,9 @@ internal sealed class CldrKn : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns97;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals95;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
@@ -10146,6 +11048,9 @@ internal sealed class CldrKo : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns98;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals96;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -10176,6 +11081,9 @@ internal sealed class CldrKoCN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns99;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals97;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -10210,6 +11118,9 @@ internal sealed class CldrKoKP : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns98;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals96;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -10240,6 +11151,9 @@ internal sealed class CldrKok : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns100;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals98;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal17);
@@ -10274,6 +11188,9 @@ internal sealed class CldrKokDeva : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns100;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals98;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal17);
 }
 
@@ -10304,6 +11221,9 @@ internal sealed class CldrKy : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns101;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals99;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -10338,6 +11258,9 @@ internal sealed class CldrLo : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns102;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals100;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
 }
 
@@ -10368,6 +11291,9 @@ internal sealed class CldrLt : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns103;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals101;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal22, CldrPluralRules.Ordinal0);
@@ -10402,6 +11328,9 @@ internal sealed class CldrLv : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns104;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals102;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal23, CldrPluralRules.Ordinal0);
 }
 
@@ -10432,6 +11361,9 @@ internal sealed class CldrMk : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns105;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals103;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal24, CldrPluralRules.Ordinal18);
@@ -10466,6 +11398,9 @@ internal sealed class CldrMl : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns106;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals104;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -10496,6 +11431,9 @@ internal sealed class CldrMn : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns107;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals105;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -10530,6 +11468,9 @@ internal sealed class CldrMr : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns108;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals106;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal17);
 }
 
@@ -10560,6 +11501,9 @@ internal sealed class CldrMs : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns109;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals107;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
@@ -10594,6 +11538,9 @@ internal sealed class CldrMsBN : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns109;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals107;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
 }
 
@@ -10624,6 +11571,9 @@ internal sealed class CldrMsID : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns110;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals108;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
@@ -10658,6 +11608,9 @@ internal sealed class CldrMsSG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns109;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals107;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal10);
 }
 
@@ -10688,6 +11641,9 @@ internal sealed class CldrMy : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns111;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals109;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -10722,6 +11678,9 @@ internal sealed class CldrNb : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns112;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals110;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -10752,6 +11711,9 @@ internal sealed class CldrNe : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns113;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals111;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal19);
@@ -10786,6 +11748,9 @@ internal sealed class CldrNeIN : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns114;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals112;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal19);
 }
 
@@ -10816,6 +11781,9 @@ internal sealed class CldrNl : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns115;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals113;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -10850,6 +11818,9 @@ internal sealed class CldrNlAW : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns115;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals113;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -10880,6 +11851,9 @@ internal sealed class CldrNlBE : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns116;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals114;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -10914,6 +11888,9 @@ internal sealed class CldrNlBQ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns115;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals113;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -10944,6 +11921,9 @@ internal sealed class CldrNlCW : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns115;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals113;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -10978,6 +11958,9 @@ internal sealed class CldrNlSR : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns115;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals113;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -11008,6 +11991,9 @@ internal sealed class CldrNlSX : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns115;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals113;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -11042,6 +12028,9 @@ internal sealed class CldrNn : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns117;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals110;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -11072,6 +12061,9 @@ internal sealed class CldrNo : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns112;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals110;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -11106,6 +12098,9 @@ internal sealed class CldrOr : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns118;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals115;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal20);
 }
 
@@ -11136,6 +12131,9 @@ internal sealed class CldrPa : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns119;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals116;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal2, CldrPluralRules.Ordinal0);
@@ -11170,6 +12168,9 @@ internal sealed class CldrPaGuru : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns119;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals116;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal2, CldrPluralRules.Ordinal0);
 }
 
@@ -11200,6 +12201,9 @@ internal sealed class CldrPcm : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns120;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals117;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);
@@ -11234,6 +12238,9 @@ internal sealed class CldrPl : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns121;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals118;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal25, CldrPluralRules.Ordinal0);
 }
 
@@ -11264,6 +12271,9 @@ internal sealed class CldrPs : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns122;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals119;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -11298,6 +12308,9 @@ internal sealed class CldrPsPK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns123;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals120;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -11328,6 +12341,9 @@ internal sealed class CldrPt : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns124;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals121;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -11362,6 +12378,9 @@ internal sealed class CldrPtAO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -11392,6 +12411,9 @@ internal sealed class CldrPtCH : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -11426,6 +12448,9 @@ internal sealed class CldrPtCV : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -11456,6 +12481,9 @@ internal sealed class CldrPtGQ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -11490,6 +12518,9 @@ internal sealed class CldrPtGW : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -11520,6 +12551,9 @@ internal sealed class CldrPtLU : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -11554,6 +12588,9 @@ internal sealed class CldrPtMO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns126;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals123;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -11584,6 +12621,9 @@ internal sealed class CldrPtMZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -11618,6 +12658,9 @@ internal sealed class CldrPtPT : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal7, CldrPluralRules.Ordinal0);
 }
 
@@ -11648,6 +12691,9 @@ internal sealed class CldrPtST : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
@@ -11682,6 +12728,9 @@ internal sealed class CldrPtTL : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns125;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals122;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal16, CldrPluralRules.Ordinal0);
 }
 
@@ -11712,6 +12761,9 @@ internal sealed class CldrQu : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns127;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals124;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -11746,6 +12798,9 @@ internal sealed class CldrQuBO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns127;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals124;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -11776,6 +12831,9 @@ internal sealed class CldrQuEC : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns127;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals124;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -11810,6 +12868,9 @@ internal sealed class CldrRo : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns128;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals125;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal26, CldrPluralRules.Ordinal10);
 }
 
@@ -11840,6 +12901,9 @@ internal sealed class CldrRoMD : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns128;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals125;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal26, CldrPluralRules.Ordinal10);
@@ -11874,6 +12938,9 @@ internal sealed class CldrRu : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns129;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals126;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
 }
 
@@ -11904,6 +12971,9 @@ internal sealed class CldrRuBY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns129;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals126;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
@@ -11938,6 +13008,9 @@ internal sealed class CldrRuKG : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns129;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals126;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
 }
 
@@ -11968,6 +13041,9 @@ internal sealed class CldrRuKZ : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns129;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals126;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
@@ -12002,6 +13078,9 @@ internal sealed class CldrRuMD : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns129;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals126;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
 }
 
@@ -12032,6 +13111,9 @@ internal sealed class CldrRuUA : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns130;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals127;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal0);
@@ -12066,6 +13148,9 @@ internal sealed class CldrSd : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns131;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals128;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -12096,6 +13181,9 @@ internal sealed class CldrSdArab : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns131;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals128;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -12130,6 +13218,9 @@ internal sealed class CldrSi : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns132;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals129;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal28, CldrPluralRules.Ordinal0);
 }
 
@@ -12160,6 +13251,9 @@ internal sealed class CldrSk : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns133;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals130;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal8, CldrPluralRules.Ordinal0);
@@ -12194,6 +13288,9 @@ internal sealed class CldrSl : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns134;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals131;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal29, CldrPluralRules.Ordinal0);
 }
 
@@ -12224,6 +13321,9 @@ internal sealed class CldrSo : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns135;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals132;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -12258,6 +13358,9 @@ internal sealed class CldrSoDJ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns135;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals132;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -12288,6 +13391,9 @@ internal sealed class CldrSoET : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns135;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals132;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -12322,6 +13428,9 @@ internal sealed class CldrSoKE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns136;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals133;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -12352,6 +13461,9 @@ internal sealed class CldrSq : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns137;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals134;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal21);
@@ -12386,6 +13498,9 @@ internal sealed class CldrSqMK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns138;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals135;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal21);
 }
 
@@ -12416,6 +13531,9 @@ internal sealed class CldrSqXK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns138;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals135;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal21);
@@ -12450,6 +13568,9 @@ internal sealed class CldrSr : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals136;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -12480,6 +13601,9 @@ internal sealed class CldrSrCyrl : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals136;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -12514,6 +13638,9 @@ internal sealed class CldrSrCyrlBA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals136;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -12544,6 +13671,9 @@ internal sealed class CldrSrCyrlME : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals136;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -12578,6 +13708,9 @@ internal sealed class CldrSrCyrlXK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals136;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -12608,6 +13741,9 @@ internal sealed class CldrSrLatn : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals137;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -12642,6 +13778,9 @@ internal sealed class CldrSrLatnBA : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals137;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -12672,6 +13811,9 @@ internal sealed class CldrSrLatnME : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals137;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
@@ -12706,6 +13848,9 @@ internal sealed class CldrSrLatnXK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns139;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals137;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal6, CldrPluralRules.Ordinal0);
 }
 
@@ -12736,6 +13881,9 @@ internal sealed class CldrSv : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns140;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals138;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal22);
@@ -12770,6 +13918,9 @@ internal sealed class CldrSvAX : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns140;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals138;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal22);
 }
 
@@ -12800,6 +13951,9 @@ internal sealed class CldrSvFI : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns141;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals139;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal22);
@@ -12834,6 +13988,9 @@ internal sealed class CldrSw : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns142;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals140;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -12864,6 +14021,9 @@ internal sealed class CldrSwCD : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns142;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals140;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -12898,6 +14058,9 @@ internal sealed class CldrSwKE : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns142;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals140;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -12928,6 +14091,9 @@ internal sealed class CldrSwUG : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns142;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals140;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -12962,6 +14128,9 @@ internal sealed class CldrTa : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns143;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals141;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -12992,6 +14161,9 @@ internal sealed class CldrTaLK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns144;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals142;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -13026,6 +14198,9 @@ internal sealed class CldrTaMY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns143;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals141;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -13056,6 +14231,9 @@ internal sealed class CldrTaSG : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns143;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals141;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -13090,6 +14268,9 @@ internal sealed class CldrTe : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns145;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals143;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -13120,6 +14301,9 @@ internal sealed class CldrTh : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns146;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals144;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13154,6 +14338,9 @@ internal sealed class CldrTk : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns147;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals145;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal23);
 }
 
@@ -13184,6 +14371,9 @@ internal sealed class CldrTl : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns26;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals64;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal15, CldrPluralRules.Ordinal10);
@@ -13218,6 +14408,9 @@ internal sealed class CldrTr : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns148;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals146;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -13248,6 +14441,9 @@ internal sealed class CldrTrCY : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns149;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals147;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -13282,6 +14478,9 @@ internal sealed class CldrUg : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns150;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals148;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -13312,6 +14511,9 @@ internal sealed class CldrUk : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns151;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals149;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal27, CldrPluralRules.Ordinal24);
@@ -13346,6 +14548,9 @@ internal sealed class CldrUr : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns152;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals150;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
 }
 
@@ -13376,6 +14581,9 @@ internal sealed class CldrUrIN : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns153;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals150;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal12, CldrPluralRules.Ordinal0);
@@ -13410,6 +14618,9 @@ internal sealed class CldrUz : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns154;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals151;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
 }
 
@@ -13440,6 +14651,9 @@ internal sealed class CldrUzLatn : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns154;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals151;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal1, CldrPluralRules.Ordinal0);
@@ -13474,6 +14688,9 @@ internal sealed class CldrVi : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns155;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals152;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal10);
 }
 
@@ -13504,6 +14721,9 @@ internal sealed class CldrYo : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns156;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals153;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13538,6 +14758,9 @@ internal sealed class CldrYoBJ : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns156;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals153;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13568,6 +14791,9 @@ internal sealed class CldrYue : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns157;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals154;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13602,6 +14828,9 @@ internal sealed class CldrYueHans : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns158;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals155;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13632,6 +14861,9 @@ internal sealed class CldrYueHant : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns157;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals154;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13666,6 +14898,9 @@ internal sealed class CldrYueHantCN : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns159;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals156;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13696,6 +14931,9 @@ internal sealed class CldrYueHantMO : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns157;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals154;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13730,6 +14968,9 @@ internal sealed class CldrZh : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns160;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals157;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13760,6 +15001,9 @@ internal sealed class CldrZhHans : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns160;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals157;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13794,6 +15038,9 @@ internal sealed class CldrZhHansHK : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns161;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals158;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13824,6 +15071,9 @@ internal sealed class CldrZhHansMO : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns162;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals159;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13858,6 +15108,9 @@ internal sealed class CldrZhHansMY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns163;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals160;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13888,6 +15141,9 @@ internal sealed class CldrZhHansSG : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns164;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals161;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13922,6 +15178,9 @@ internal sealed class CldrZhHant : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns165;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals162;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -13952,6 +15211,9 @@ internal sealed class CldrZhHantHK : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns166;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals163;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
@@ -13986,6 +15248,9 @@ internal sealed class CldrZhHantMO : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns166;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals163;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -14018,6 +15283,9 @@ internal sealed class CldrZhHantMY : LocaleData
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns165;
 
     /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals162;
+
+    /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal0, CldrPluralRules.Ordinal0);
 }
 
@@ -14048,6 +15316,9 @@ internal sealed class CldrZu : LocaleData
 
     /// <inheritdoc/>
     internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns167;
+
+    /// <inheritdoc/>
+    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals164;
 
     /// <inheritdoc/>
     internal override PluralRules CreatePlurals() => new(CldrPluralRules.Cardinal3, CldrPluralRules.Ordinal0);

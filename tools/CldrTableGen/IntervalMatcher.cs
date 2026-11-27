@@ -735,6 +735,7 @@ internal sealed class IntervalMatcher
             pattern = intervalPattern[EarlierFirstPrefix.Length..];
         }
 
+        pattern = RequestedDayPeriod(pattern);
         int split = SplitPoint(pattern);
         if (split == 0)
         {
@@ -742,6 +743,27 @@ internal sealed class IntervalMatcher
         }
 
         parts[field] = new Part(pattern[..split], pattern[split..], laterFirst);
+    }
+
+    // The pattern with each flexible day period (B) outside quotes written as the requested a of the same length, as the date
+    // formats write it (design §4.11, "The letter of the day period"; Issue #906): CLDR 49's zh-Hant hm item is Bh:mm至h:mm, and
+    // ICU 78.3 with CLDR 48 writes 上午9:05至11:30. ICU's interval code would keep the B.
+    private static string RequestedDayPeriod(string pattern)
+    {
+        if (!pattern.Contains('B', StringComparison.Ordinal))
+        {
+            return pattern;
+        }
+
+        var text = new StringBuilder(pattern.Length);
+        bool quoted = false;
+        foreach (char character in pattern)
+        {
+            quoted ^= character == '\'';
+            text.Append(!quoted && character == 'B' ? 'a' : character);
+        }
+
+        return text.ToString();
     }
 
     // DateIntervalFormat::adjustFieldWidth: each field of the pattern as long as the best skeleton's is made as long as the
