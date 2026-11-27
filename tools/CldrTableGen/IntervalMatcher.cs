@@ -523,7 +523,10 @@ internal sealed class IntervalMatcher
         var hourAndDayPeriod = new StringBuilder().Append(hour);
         if (hour is not ('H' or 'k'))
         {
-            int length = dayPeriodLength >= 5 || hourLength >= 5 ? 5 : dayPeriodLength >= 3 || hourLength >= 3 ? 3 : 1;
+            int length =
+                dayPeriodLength >= 5 || hourLength >= 5 ? 5
+                : dayPeriodLength >= 3 || hourLength >= 3 ? 3
+                : 1;
             hourAndDayPeriod.Append(dayPeriodLetter, length);
         }
 

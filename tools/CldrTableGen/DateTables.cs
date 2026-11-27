@@ -262,7 +262,8 @@ internal sealed class DateTables
     }
 
     // A range takes no offset, so the skeletons with a time zone have no entry (design §4.11, "The table").
-    private static bool HasZone(string skeleton) => skeleton.Contains('v', StringComparison.Ordinal) || skeleton.Contains('z', StringComparison.Ordinal);
+    private static bool HasZone(string skeleton) =>
+        skeleton.Contains('v', StringComparison.Ordinal) || skeleton.Contains('z', StringComparison.Ordinal);
 
     // One entry of an interval table: the count of records, a byte for each field, and the records.
     private static void IntervalEntry(List<byte> table, string tag, IntervalSlot[] slots)

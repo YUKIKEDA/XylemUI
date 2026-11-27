@@ -675,16 +675,10 @@ public sealed class CldrTableGenTests
             Assert.Equal("{0}" + Dash + "{1}", fallback);
             IntervalEntry yMMMd = en[YMMMdEntry]!;
             Assert.Equal([2, 3, 4, 0, 0, 0, 0], yMMMd.Fields);
-            Assert.Equal(
-                [(0, "MMM d, y" + Dash, "MMM d, y"), (0, "MMM d" + Dash, "MMM d, y"), (0, "MMM d" + Dash, "d, y")],
-                yMMMd.Records
-            );
+            Assert.Equal([(0, "MMM d, y" + Dash, "MMM d, y"), (0, "MMM d" + Dash, "MMM d, y"), (0, "MMM d" + Dash, "d, y")], yMMMd.Records);
             IntervalEntry yMMMMd = en[YMMMMdEntry]!;
             Assert.Equal([2, 3, 4, 0, 0, 0, 0], yMMMMd.Fields);
-            Assert.Equal(
-                [(0, "MMMM d, y" + Dash, "MMMM d, y"), (0, "MMMM d" + Dash, "MMMM d, y"), (0, "MMMM d" + Dash, "d, y")],
-                yMMMMd.Records
-            );
+            Assert.Equal([(0, "MMMM d, y" + Dash, "MMMM d, y"), (0, "MMMM d" + Dash, "MMMM d, y"), (0, "MMMM d" + Dash, "d, y")], yMMMMd.Records);
             IntervalEntry day = en[DEntry]!;
             Assert.Equal([2, 3, 4, 0, 0, 0, 0], day.Fields);
             Assert.Equal([(0, "M/d/y" + Dash, "M/d/y"), (0, "M/d" + Dash, "M/d"), (0, "d" + Dash, "d")], day.Records);
@@ -749,10 +743,7 @@ public sealed class CldrTableGenTests
             Assert.Equal([1, 1, 1, 0, 0, 0, 0], en[EEntry]!.Fields);
             Assert.Empty(en[EEntry]!.Records);
             Assert.Equal([2, 2, 2, 3, 4, 4, 0], en[JmEntry]!.Fields);
-            Assert.Equal(
-                [(2, "M/d/y h:mm a", string.Empty), (0, "h:mm a" + Dash, "h:mm a"), (0, "h:mm" + Dash, "h:mm a")],
-                en[JmEntry]!.Records
-            );
+            Assert.Equal([(2, "M/d/y h:mm a", string.Empty), (0, "h:mm a" + Dash, "h:mm a"), (0, "h:mm" + Dash, "h:mm a")], en[JmEntry]!.Records);
             Assert.Equal([2, 2, 2, 3, 3, 3, 0], en[HmEntry]!.Fields);
             Assert.Equal([(2, "M/d/y HH:mm", string.Empty), (0, "HH:mm" + Dash, "HH:mm")], en[HmEntry]!.Records);
             Assert.Equal([2, 2, 2, 1, 1, 1, 1], en[HmsEntry]!.Fields);
