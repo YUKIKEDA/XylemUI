@@ -105,7 +105,7 @@ internal sealed class SkeletonMatcher
     /// (<c>addCLDRData</c>).
     /// </summary>
     /// <param name="tag">The locale, for the messages.</param>
-    /// <param name="availableFormats">The locale's <c>availableFormats</c>: each skeleton and its pattern, which replace an entry of the
+    /// <param name="availableFormats">The locale's <c>availableFormats</c>, taken in byte order of the skeletons: each skeleton and its pattern, which replace an entry of the
     /// same base skeleton and the same forms. A skeleton with an alternative or a count (<c>hm-alt-ascii</c>, <c>yw-count-one</c>) and
     /// a skeleton with a symbol or a length the table of forms does not have (<c>MMMddd</c>) are not candidates.</param>
     /// <param name="standardPatterns">The locale's <c>timeFormats</c> and then its <c>dateFormats</c> (full, long, medium, short), the
@@ -132,7 +132,8 @@ internal sealed class SkeletonMatcher
             }
         }
 
-        foreach ((string skeleton, string pattern) in availableFormats)
+        // ICU reads a locale's availableFormats from its resource table, whose keys are in byte order.
+        foreach ((string skeleton, string pattern) in availableFormats.OrderBy(format => format.Key, StringComparer.Ordinal))
         {
             if (!skeleton.Contains('-', StringComparison.Ordinal) && Parse(skeleton) is { } fields)
             {
@@ -284,7 +285,8 @@ internal sealed class SkeletonMatcher
     }
 
     // A request with a numeric year that is not of two digits does not take a skeleton with a two-digit year, whose pattern can
-    // have text that fits that year only (en's yyMMMd, MMM d, ’yy; ICU's yearLengthIsCompatible, dtptngen.cpp).
+    // have text that fits that year only (en's yyMMMd, MMM d, ’yy; yearLengthIsCompatible in ICU main's dtptngen.cpp, which ICU 78
+    // does not have; CLDR 49's tables are the same either way).
     private static bool YearLengthIsCompatible(Dictionary<DateField, Field> requested, Dictionary<DateField, Field> candidate) =>
         !requested.TryGetValue(DateField.Year, out Field wanted)
         || !candidate.TryGetValue(DateField.Year, out Field year)

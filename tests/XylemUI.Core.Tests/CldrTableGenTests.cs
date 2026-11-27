@@ -511,9 +511,10 @@ public sealed class CldrTableGenTests
     ///   M月; Japan's hour is h and ja-JP's H. ko's region is the world's and ko-001's hour is H; ko's full date pattern is en's,
     ///   and its formats have yMMMMEEEEdd (EEEE, dd MMMM y), of the same base as the pattern's yMMMMEEEEd but another form of d,
     ///   and yyM (M/yy) in the place of yM.
-    ///   de's are EnFormats with MMMEEEEd added after them, which is as near MMMMEEEEd as MMMMEd is; pt's yMMMEEEEd (EEEE, d/MM/y),
-    ///   added after EnFormats, is as near yMMMMEEEEd as its yMMMMEd (E, d 'de' MMMM 'de' y) is; its formats have, in the place of
-    ///   yM, yyyyyyyyyyyyyyyyyM (M/yyyyyyyyyyyyyyyyy) and then YM (M/Y). de's also have ahm (h:mm 'x' a) after hm. zh's have no
+    ///   de's are EnFormats with MMMEEEEd, which is as near MMMMEEEEd as MMMMEd is; pt's yMMMEEEEd (EEEE, d/MM/y) is as near
+    ///   yMMMMEEEEd as its yMMMMEd (E, d 'de' MMMM 'de' y) is; its formats have, in the place of
+    ///   yM, yyyyyyyyyyyyyyyyyM (M/yyyyyyyyyyyyyyyyy) and YM (M/Y). de's also have ahm (h:mm 'x' a). The generator reads each
+    ///   locale's availableFormats in byte order of the skeletons, as ICU reads its resource table. zh's have no
     ///   Hms, and zh's medium and short time patterns are HH:mm:ss and H:mm:ss. The full date pattern of every locale but en is
     ///   E, MMMM d, y, whose skeleton yMMMMEd they have.
     ///
@@ -530,11 +531,13 @@ public sealed class CldrTableGenTests
     /// - ko: jm is HH:mm (ko-001 before 001); yMMMMEEEEd is the full date pattern, EEEE d MMMM y, at distance 0: yMMMMEEEEdd does
     ///   not replace it, as its d is another form, and is farther. yM is not yyM's M/y, as a request of one y does not take a skeleton
     ///   of two (ICU's yearLengthIsCompatible), but yMMM's MMM y, whose month is text.
-    /// - de: MMMMEEEEd takes MMMMEd, the first of the two at the same distance in ICU's order: EEEE, MMMM d. jm is hm's h:mm a:
-    ///   ahm is hm's skeleton, since h takes a, and an item of the same given skeleton is not added again.
-    /// - pt: yMMMMEEEEd takes yMMMMEd, the first of the two at the same distance, not yMMMEEEEd: EEEE, d 'de' MMMM 'de' y. yM takes
-    ///   YM's M/Y, whose base begins with Y, before the 17 y of yyyyyyyyyyyyyyyyyM, added first but listed under y: both are 0x10
-    ///   from y.
+    /// - de: MMMMEEEEd takes MMMEEEEd, the first of the two at the same distance in ICU's order (MMMEEEEd comes before MMMMEd in
+    ///   byte order): EEEE, d. MMMM. jm is ahm's h:mm 'x' a: ahm is hm's skeleton, since h takes a, comes first in byte order, and an
+    ///   item of the same given skeleton is not added again.
+    /// - pt: yMMMMEEEEd takes yMMMMEd, the first of the two at the same distance, not yMMMEEEEd: yMMMMEd replaced the full date
+    ///   pattern in its place, added before the availableFormats: EEEE, d 'de' MMMM 'de' y. yM takes
+    ///   YM's M/Y, whose base begins with Y and is listed before the 17 y of yyyyyyyyyyyyyyyyyM, listed under y: both are 0x10 from
+    ///   y.
     /// - zh: Hms takes the medium time pattern HH:mm:ss, not the short one H:mm:ss, which has the same base and is not added: the
     ///   hours keep their length.
     /// </remarks>
@@ -561,7 +564,7 @@ public sealed class CldrTableGenTests
             (_, List<string> ko) = PatternTable(output, "CldrKo");
             Assert.Equal(("HH:mm", "EEEE d MMMM y", "MMM y"), (ko[32], ko[25], ko[17]));
             (_, List<string> de) = PatternTable(output, "CldrDe");
-            Assert.Equal(("EEEE, MMMM d", "h:mm a"), (de[13], de[32]));
+            Assert.Equal(("EEEE, d. MMMM", "h:mm 'x' a"), (de[13], de[32]));
             (_, List<string> pt) = PatternTable(output, "CldrPt");
             Assert.Equal(("EEEE, d 'de' MMMM 'de' y", "M/Y"), (pt[25], pt[17]));
             (_, List<string> zh) = PatternTable(output, "CldrZh");
