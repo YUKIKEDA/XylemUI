@@ -1,5 +1,6 @@
 using System.Numerics;
 using XylemUI.Testing.XUnit;
+using XylemUI.Text;
 using static XylemUI.Elements;
 
 namespace XylemUI.Testing.Tests;
@@ -633,6 +634,67 @@ public sealed class HeadlessAppTests
         Assert.True(secondOnUiThread);
     }
 
+    /// <summary>
+    /// Disposing the app disposes the rasterizer its renderer made, which the glyph atlas, given that one rasterizer, leaves to the
+    /// app; the rasterizer goes before the renderer that made it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A renderer of the test's own that counts the rasterizers it makes, and whose rasterizer and itself write their disposal
+    ///   into one list.
+    ///
+    /// Steps:
+    /// - Start an app of a box with the renderer; copy the list; dispose the app.
+    ///
+    /// Expected:
+    /// - The renderer made one rasterizer. The copy is empty; after the disposal the list is the rasterizer, then the renderer.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task DisposeAsync_DisposesTheRasterizerTheRendererMade_BeforeTheRenderer()
+    {
+        var renderer = new RecordingRenderer();
+        HeadlessApp app = await HeadlessApp.StartAsync(() => Box(), new HeadlessOptions { Renderer = () => renderer });
+        string[] before = [.. renderer.Disposed];
+
+        await app.DisposeAsync();
+
+        Assert.Equal(1, renderer.Rasterizers);
+        Assert.Empty(before);
+        Assert.Equal(["rasterizer", "renderer"], renderer.Disposed);
+    }
+
+    /// <summary>
+    /// A root function that throws fails the start, and the app it leaves disposes the rasterizer its renderer made, before the
+    /// renderer, as a disposal does.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A renderer of the test's own that counts the rasterizers it makes, and whose rasterizer and itself write their disposal
+    ///   into one list.
+    ///
+    /// Steps:
+    /// - Start an app with the renderer and a root function that throws <see cref="InvalidOperationException"/>.
+    ///
+    /// Expected:
+    /// - The start throws that exception; the renderer made one rasterizer; the list is the rasterizer, then the renderer.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task StartAsync_ARootFunctionThatThrows_DisposesTheRasterizerTheRendererMade()
+    {
+        var renderer = new RecordingRenderer();
+        var thrown = new InvalidOperationException("The root function of the test throws.");
+
+        Exception caught = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            HeadlessApp.StartAsync(() => throw thrown, new HeadlessOptions { Renderer = () => renderer })
+        );
+
+        Assert.Same(thrown, caught);
+        Assert.Equal(1, renderer.Rasterizers);
+        Assert.Equal(["rasterizer", "renderer"], renderer.Disposed);
+    }
+
     // Starts an app whose root adds a receiver of Ping, posts Ping(number) from a worker through UiDispatcher.Current, pumps until
     // settled, and disposes the app. Returns what the worker read and what the receiver got.
     private static async Task<(IUiDispatcher Read, List<int> Received, bool OnUiThread)> PostThroughCurrentAsync(int number)
@@ -666,4 +728,45 @@ public sealed class HeadlessAppTests
     }
 
     private sealed record Ping(int Number) : UiMessage;
+
+    // A renderer that draws nothing, counts the rasterizers it makes, and writes into Disposed when its rasterizer ("rasterizer") and
+    // itself ("renderer") are disposed.
+    private sealed class RecordingRenderer : HeadlessRenderer
+    {
+        public List<string> Disposed { get; } = [];
+
+        public int Rasterizers { get; private set; }
+
+        internal override IRenderTarget Target { get; } = new HeadlessTarget(null);
+
+        internal override IGlyphRasterizer CreateRasterizer()
+        {
+            Rasterizers++;
+            return new RecordingRasterizer(Disposed);
+        }
+
+        internal override void Resize(int width, int height) { }
+
+        internal override Color[] Capture(out int width, out int height)
+        {
+            (width, height) = (0, 0);
+            return [];
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed.Add("renderer");
+            base.Dispose(disposing);
+        }
+    }
+
+    // A rasterizer that gives every glyph an empty box, as the headless one does, and writes its disposal into the list.
+    private sealed class RecordingRasterizer(List<string> disposed) : IGlyphRasterizer, IDisposable
+    {
+        public GlyphBox Measure(in GlyphKey glyph) => default;
+
+        public void Rasterize(in GlyphKey glyph, Span<byte> destination, int stride) { }
+
+        public void Dispose() => disposed.Add("rasterizer");
+    }
 }
