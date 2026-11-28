@@ -244,7 +244,8 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
     ///   The UI thread is the headless session's, which set <see cref="UiDispatcher.Current"/> to its dispatcher.
     ///
     /// Steps:
-    /// - Read <see cref="UiDispatcher.Current"/>. On the new thread, make the host; then read the thread's context, and how many
+    /// - Run an empty action on the UI thread, which starts the session when no test of the group has. Read
+    ///   <see cref="UiDispatcher.Current"/>. On the new thread, make the host; then read the thread's context, and how many
     ///   OLE initializations of that thread are not yet balanced (<c>Com.UiThreadInitializations</c>, 0 on a new thread). Read
     ///   <see cref="UiDispatcher.Current"/> again.
     ///
@@ -255,6 +256,8 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
     [Fact]
     public void Constructor_OffTheUiThread_ThrowsAndChangesNothing()
     {
+        // The fixture starts the session at its first Invoke; when this test is the first of the group, no dispatcher is set yet.
+        ui.Invoke(static () => { });
         IUiDispatcher before = UiDispatcher.Current;
         Exception? thrown = null;
         SynchronizationContext? context = new();
