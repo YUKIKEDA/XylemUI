@@ -17,9 +17,10 @@ namespace XylemUI.Tools.CldrTableGen;
 /// stand-alone name that is its format name is written empty. A pattern table is the digit zero of the locale's default numbering
 /// system (2 bytes, little-endian); the patterns of the 41 skeletons in the order of <see cref="Skeletons"/>, a <c>j</c> skeleton's
 /// with the hour of the locale's language and region (CLDR's <c>timeData</c>); the 24-hour patterns of the 7 <c>j</c> skeletons,
-/// empty when the pattern is the one before; the patterns that join a date and a time (<c>dateTimeFormats</c>: full, long, medium,
-/// short) and the <c>Time-Day-Of-Week</c> append item, with their letters quoted; and <c>gmtFormat</c> and <c>hourFormat</c>. A
-/// string is a length byte and that many bytes of UTF-8.
+/// empty when the pattern is the one before; the patterns that join a date and a time (full, long, medium, short: the standard ones
+/// of <c>dateTimeFormats-atTime</c> when the locale has them, else those of <c>dateTimeFormats</c>, as ICU's
+/// <c>DateTimePatternGenerator::loadDateTimeFormats</c> reads them) and the <c>Time-Day-Of-Week</c> append item, with their letters
+/// quoted; and <c>gmtFormat</c> and <c>hourFormat</c>. A string is a length byte and that many bytes of UTF-8.
 /// <para>
 /// An interval table (design §4.11, "Interval formats") is <c>intervalFormatFallback</c>, then an entry for each of the 37 skeletons
 /// without a time zone in the order of <see cref="Skeletons"/> (a <c>j</c> skeleton's in the hour of the locale), then one for the
@@ -170,8 +171,10 @@ internal sealed class DateTables
                 .GetProperty("timeZoneNames");
             char hour = HourSymbol(tag, entry.Region, timeData);
             SkeletonMatcher matcher = Matcher(tag, gregorian);
-            (byte[] patternTable, List<string> written) = PatternTable(tag, gregorian, zones, matcher, hour, NumberTables.Zero(cldr, tag));
-            byte[] intervalTable = IntervalTable(tag, gregorian, matcher, hour, written);
+            string[] joinings = JoiningPatterns(tag, gregorian);
+            char zero = NumberTables.Zero(cldr, tag);
+            (byte[] patternTable, List<string> written) = PatternTable(tag, gregorian, zones, matcher, hour, zero, joinings);
+            byte[] intervalTable = IntervalTable(tag, gregorian, matcher, hour, written, joinings[^1]);
             int nameAt = TableBytes.Index(NameTable(tag, gregorian), names, nameIndex);
             int patternAt = TableBytes.Index(patternTable, patterns, patternIndex);
             int intervalAt = TableBytes.Index(intervalTable, intervals, intervalIndex);
@@ -182,8 +185,8 @@ internal sealed class DateTables
     }
 
     /// <summary>
-    /// Returns a pattern with each placeholder once: <c>{0}</c> and <c>{1}</c> in a pattern that joins two (<c>dateTimeFormats</c>,
-    /// the <c>Time-Day-Of-Week</c> append item, and <c>intervalFormatFallback</c>), <c>{0}</c> in <c>gmtFormat</c>.
+    /// Returns a pattern with each placeholder once: <c>{0}</c> and <c>{1}</c> in a pattern that joins two (a date and a time, the
+    /// <c>Time-Day-Of-Week</c> append item, and <c>intervalFormatFallback</c>), <c>{0}</c> in <c>gmtFormat</c>.
     /// </summary>
     /// <param name="tag">The locale, for the message.</param>
     /// <param name="pattern">The pattern.</param>
@@ -220,12 +223,19 @@ internal sealed class DateTables
     }
 
     // The interval table of a locale (the remarks of the class): the entries of the 37 skeletons without a time zone, then the
-    // 24-hour ones of j, jm, and jms; written holds the 41 patterns and the 7 24-hour ones of the pattern table.
-    private static byte[] IntervalTable(string tag, JsonElement gregorian, SkeletonMatcher matcher, char hour, List<string> written)
+    // 24-hour ones of j, jm, and jms; written holds the 41 patterns and the 7 24-hour ones of the pattern table, and shortJoining
+    // the short pattern that joins a date and a time, as the pattern table has it.
+    private static byte[] IntervalTable(
+        string tag,
+        JsonElement gregorian,
+        SkeletonMatcher matcher,
+        char hour,
+        List<string> written,
+        string shortJoining
+    )
     {
-        JsonElement dateTimeFormats = gregorian.GetProperty("dateTimeFormats");
-        string shortJoining = Joining(tag, TableBytes.Text(tag, dateTimeFormats, "short"));
-        var intervals = new IntervalMatcher(tag, dateTimeFormats.GetProperty("intervalFormats"), matcher, shortJoining);
+        JsonElement intervalFormats = gregorian.GetProperty("dateTimeFormats").GetProperty("intervalFormats");
+        var intervals = new IntervalMatcher(tag, intervalFormats, matcher, shortJoining);
         var table = new List<byte>();
         TableBytes.Add(table, intervals.Fallback);
         var own = new Dictionary<string, IntervalSlot[]>(StringComparer.Ordinal);
@@ -384,14 +394,15 @@ internal sealed class DateTables
     }
 
     // The pattern table of a locale (the remarks of the class), and the 41 patterns and the 7 24-hour ones it writes, each 24-hour
-    // one also when it is the pattern before.
+    // one also when it is the pattern before; joinings are the 4 patterns that join a date and a time (JoiningPatterns).
     private static (byte[] Table, List<string> Written) PatternTable(
         string tag,
         JsonElement gregorian,
         JsonElement zones,
         SkeletonMatcher matcher,
         char hour,
-        char zero
+        char zero,
+        string[] joinings
     )
     {
         JsonElement dateTimeFormats = gregorian.GetProperty("dateTimeFormats");
@@ -418,9 +429,9 @@ internal sealed class DateTables
             CheckPattern(tag, pattern);
         }
 
-        foreach (string length in Lengths)
+        foreach (string joining in joinings)
         {
-            TableBytes.Add(table, Joining(tag, TableBytes.Text(tag, dateTimeFormats, length)));
+            TableBytes.Add(table, joining);
         }
 
         TableBytes.Add(table, Joining(tag, TableBytes.Text(tag, dateTimeFormats.GetProperty("appendItems"), "Time-Day-Of-Week")));
@@ -431,7 +442,20 @@ internal sealed class DateTables
         return ([.. table], written);
     }
 
-    // A pattern that joins two (dateTimeFormats and the Time-Day-Of-Week append item), with {0} and {1} once each and each run of
+    // The 4 patterns that join a date and a time (full, long, medium, short), with their letters quoted: the standard ones of
+    // dateTimeFormats-atTime when the locale has them, else those of dateTimeFormats, as ICU's
+    // DateTimePatternGenerator::loadDateTimeFormats reads them (ICU main, icu4c/source/i18n/dtptngen.cpp; design §4.11, "The
+    // pattern that joins a date and a time"). pt's short one is {1}, {0} in atTime and {1} {0} in dateTimeFormats, and ICU 78.3
+    // writes pt's yMdjm as 04/03/2026, 09:05.
+    private static string[] JoiningPatterns(string tag, JsonElement gregorian)
+    {
+        JsonElement source = gregorian.TryGetProperty("dateTimeFormats-atTime", out JsonElement atTime)
+            ? atTime.GetProperty("standard")
+            : gregorian.GetProperty("dateTimeFormats");
+        return [.. Lengths.Select(length => Joining(tag, TableBytes.Text(tag, source, length)))];
+    }
+
+    // A pattern that joins two (a date and a time, and the Time-Day-Of-Week append item), with {0} and {1} once each and each run of
     // ASCII letters outside them and outside quotes put in quotes: UTS #35 part 4 makes these simple formatters whose text is
     // literal, and DateFormatter compiles the joined text as one date pattern, where a letter would be a field (sl's {1} ob {0} is
     // written {1} 'ob' {0}). A run next to a quote stops the tool: quoting it would make two quotes in a row, a quote character.

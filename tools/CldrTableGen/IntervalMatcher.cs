@@ -13,7 +13,12 @@ namespace XylemUI.Tools.CldrTableGen;
 /// <remarks>
 /// The era is left out: a <see cref="DateTime"/> holds years of the common era only, so two values never differ in it. ICU's
 /// <c>adjustFieldWidth</c> also rewrites <c>v</c>, <c>K</c>, <c>k</c>, and <c>b</c> for a skeleton with <c>z</c>, <c>K</c>, <c>k</c>,
-/// or <c>b</c>, and drops the day period for one with <c>J</c>; no skeleton the tool matches has those letters, so the port does not.
+/// or <c>b</c>, and drops the day period for one with <c>J</c>, which the port does not. The skeletons the tool matches have no
+/// <c>z</c> (DateTables leaves out the time zone skeletons) and no <c>J</c>. <c>K</c>, <c>k</c>, and <c>b</c> could come only from the
+/// locale's pattern of the hour, which <c>normalizeHourMetacharacters</c> reads. That pattern is the pattern table's <c>j</c> or
+/// <c>H</c> pattern, on whose <c>K</c> and <c>k</c> <c>DateTables.CheckPattern</c> stops the tool (a locale whose pattern of the hour
+/// were <c>ja</c>'s <c>aK時</c>), and its day period is the <c>a</c> that a 12-hour skeleton asks for: SkeletonMatcher writes the
+/// requested day period, so <c>zh-Hant</c>'s <c>Bh時</c> is read as <c>ah時</c>.
 /// </remarks>
 internal sealed class IntervalMatcher
 {
@@ -60,8 +65,9 @@ internal sealed class IntervalMatcher
     /// letters are read as ICU's <c>DateIntervalSink</c> reads them: <c>a</c> and <c>B</c> are am or pm, <c>h</c> and <c>H</c> the hour,
     /// the first in byte order winning; <c>G</c> and any other letter are not read.</param>
     /// <param name="matcher">The locale's skeleton formats, for the patterns of the hour and of a date with a time.</param>
-    /// <param name="shortJoining">The locale's short pattern that joins a date and a time, with its letters quoted, which ICU's
-    /// <c>getBestPattern</c> takes for <c>yMd</c> and a time.</param>
+    /// <param name="shortJoining">The locale's short pattern that joins a date and a time (<c>dateTimeFormats-atTime</c>'s when the
+    /// locale has it, else <c>dateTimeFormats</c>'), with its letters quoted, which ICU's <c>getBestPattern</c> takes for <c>yMd</c>
+    /// and a time.</param>
     /// <exception cref="InvalidDataException">The fallback does not have <c>{0}</c> and <c>{1}</c> once each.</exception>
     public IntervalMatcher(string tag, JsonElement intervalFormats, SkeletonMatcher matcher, string shortJoining)
     {
@@ -117,10 +123,11 @@ internal sealed class IntervalMatcher
     /// Returns how a skeleton writes a range for each field the two dates can first differ in.
     /// </summary>
     /// <param name="skeleton">The skeleton, with <c>j</c> already replaced by an hour symbol; date fields only or time fields only,
-    /// and no time zone.</param>
+    /// and no time zone, as DateTables passes the 37 of Flutter's 41 skeletons without a time zone, none of which has both.</param>
     /// <param name="pattern">The skeleton's own pattern, which writes one date.</param>
     /// <returns>For the year, the month, the day, am or pm, the hour, the minute, and the second, how the range is written.</returns>
-    /// <exception cref="InvalidDataException">A pattern of the data cannot be split, or the skeleton has date and time fields.</exception>
+    /// <exception cref="InvalidDataException">An interval pattern of the data is a prefix alone, a skeleton of the data has a character
+    /// that is not a letter.</exception>
     public IntervalSlot[] Match(string skeleton, string pattern)
     {
         var parts = new Part[FieldCount];
@@ -131,16 +138,13 @@ internal sealed class IntervalMatcher
 
         string converted = NormalizeHourMetacharacters(skeleton);
         Split(converted, out string dateSkeleton, out string normalizedDate, out string timeSkeleton, out string normalizedTime);
-        if (dateSkeleton.Length > 0 && timeSkeleton.Length > 0)
-        {
-            throw new InvalidDataException("The skeleton " + skeleton + " of " + _tag + " has date and time fields, which ranges do not take.");
-        }
-
         SetSeparateDateTimePattern(parts, normalizedDate, normalizedTime);
         if (timeSkeleton.Length > 0)
         {
             // initializePattern's path for a time skeleton, found or not: a range of other days writes both dates whole with yMd and
-            // the time, the pattern ICU's getBestPattern joins with the short dateTimeFormat (the month of yMd is numeric).
+            // the time, the pattern ICU's getBestPattern joins with the short joining pattern (the month of yMd is numeric): pt's
+            // {1}, {0} of atTime, so that ICU 78.3 writes pt's Hm from 2026-03-04 09:05 to 2026-03-05 11:30 as
+            // 04/03/2026, 09:05 – 05/03/2026, 11:30.
             string withDate = Join(_shortJoining, _matcher.Match("yMd"), _matcher.Match(timeSkeleton));
             foreach (int field in new[] { Day, Month, Year })
             {
@@ -441,8 +445,11 @@ internal sealed class IntervalMatcher
     }
 
     // DateIntervalFormat::normalizeHourMetacharacters: the hour field becomes the hour letter of the locale's pattern of that hour
-    // alone and, for a 12-hour letter, a day period of the pattern's letter (a when it has neither b nor B), 1, 3, or 5 long; the
-    // skeleton's own day period is removed. Quoted text of the pattern is not read (de's 'Uhr').
+    // alone (h or H) and, for h, a day period of the skeleton's letter or a, 1, 3, or 5 long; the skeleton's own day period is
+    // removed. Quoted text of the pattern is not read (de's 'Uhr'). ICU also takes K, k, b, and B from the pattern, and then
+    // adjustFieldWidth rewrites the interval patterns' letters, which the port does not do. None of them reaches here: the pattern
+    // is the pattern table's j or H pattern, on whose K or k DateTables.CheckPattern stops the tool, and its day period is the a
+    // that SkeletonMatcher writes for a 12-hour skeleton (the remarks of the class).
     private string NormalizeHourMetacharacters(string skeleton)
     {
         char hourLetter = '\0';
@@ -493,35 +500,14 @@ internal sealed class IntervalMatcher
         }
 
         string text = pattern.ToString();
-        char hour = 'H';
-        if (text.Contains('h', StringComparison.Ordinal))
-        {
-            hour = 'h';
-        }
-        else if (text.Contains('K', StringComparison.Ordinal))
-        {
-            hour = 'K';
-        }
-        else if (text.Contains('k', StringComparison.Ordinal))
-        {
-            hour = 'k';
-        }
-
-        if (text.Contains('b', StringComparison.Ordinal))
-        {
-            dayPeriodLetter = 'b';
-        }
-        else if (text.Contains('B', StringComparison.Ordinal))
-        {
-            dayPeriodLetter = 'B';
-        }
-        else if (dayPeriodLetter == '\0')
+        char hour = text.Contains('h', StringComparison.Ordinal) ? 'h' : 'H';
+        if (dayPeriodLetter == '\0')
         {
             dayPeriodLetter = 'a';
         }
 
         var hourAndDayPeriod = new StringBuilder().Append(hour);
-        if (hour is not ('H' or 'k'))
+        if (hour == 'h')
         {
             int length =
                 dayPeriodLength >= 5 || hourLength >= 5 ? 5
@@ -738,13 +724,16 @@ internal sealed class IntervalMatcher
             pattern = intervalPattern[EarlierFirstPrefix.Length..];
         }
 
+        // A pattern whose fields do not repeat splits at its end: ICU's splitPatternInto2Part makes it all the first part, and
+        // formatImpl writes one date with it. Only an empty pattern would leave the first part empty, and CLDR's texts are not empty,
+        // so only a prefix with nothing after it is.
         pattern = RequestedDayPeriod(pattern);
-        int split = SplitPoint(pattern);
-        if (split == 0)
+        if (pattern.Length == 0)
         {
-            throw new InvalidDataException("The interval pattern " + intervalPattern + " of " + _tag + " has no part for the first date.");
+            throw new InvalidDataException("The interval pattern " + intervalPattern + " of " + _tag + " has nothing after its prefix.");
         }
 
+        int split = SplitPoint(pattern);
         parts[field] = new Part(pattern[..split], pattern[split..], laterFirst);
     }
 

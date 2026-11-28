@@ -3,8 +3,8 @@ namespace XylemUI;
 /// <summary>
 /// Formats dates and times with a locale's CLDR tables (design §4.11, "Dates and times"), in the Gregorian calendar: a format is one
 /// of Flutter's 41 skeletons (<c>yMd</c>, <c>jm</c>), whose pattern tools/CldrTableGen found in the locale's
-/// <c>availableFormats</c> by UTS #35's "Matching Skeletons", or a date skeleton and a time skeleton joined by the locale's
-/// <c>dateTimeFormats</c>. The digits are those of the locale's default numbering system. An instance does not change after it is
+/// <c>availableFormats</c> by UTS #35's "Matching Skeletons", or a date skeleton and a time skeleton joined by the locale's pattern
+/// that joins a date and a time. The digits are those of the locale's default numbering system. An instance does not change after it is
 /// made, so any thread may call it.
 /// </summary>
 /// <remarks>
@@ -189,8 +189,9 @@ public sealed class DateFormatter
     }
 
     /// <summary>
-    /// Makes a format of a date skeleton and a time skeleton of the 41, joined by the locale's <c>dateTimeFormats</c> (UTS #35 part 4,
-    /// "Matching Skeletons"): the full pattern when the date skeleton has a wide month and a weekday (<c>MMMMEEEEd</c>), the long one
+    /// Makes a format of a date skeleton and a time skeleton of the 41, joined by the locale's patterns that join a date and a time
+    /// (CLDR's <c>dateTimeFormats-atTime</c>, or <c>dateTimeFormats</c> for a locale without them, as ICU's
+    /// <c>DateTimePatternGenerator</c> reads them; UTS #35 part 4, "Matching Skeletons"): the full pattern when the date skeleton has a wide month and a weekday (<c>MMMMEEEEd</c>), the long one
     /// for a wide month alone (<c>yMMMMd</c>), the medium one for an abbreviated month (<c>yMMMd</c>), and the short one otherwise
     /// (<c>yMd</c>). A date skeleton of a weekday alone (<c>E</c>, <c>EEEE</c>) is joined by the <c>Time-Day-Of-Week</c> append item
     /// instead.
@@ -623,13 +624,23 @@ public sealed class DateFormatter
         }
     }
 
-    // Throws as Check does for a value's type, InvalidOperationException for a joined format, which has no interval patterns, and
-    // ArgumentException for a range whose start is after its end; then reads the range's patterns when no range has read them.
+    // Throws ArgumentException, naming start, when the format does not take a range of a type: a range of dates for a format with
+    // time fields, and any range for a format with a time zone field, as a range takes no offset (design §4.11, "The table");
+    // InvalidOperationException for a joined format, which has no interval patterns; and ArgumentException for a range whose start
+    // is after its end. Then reads the range's patterns when no range has read them.
     private void CheckRange(ValueKind kind, bool reversed)
     {
-        Check(kind);
+        if (kind == ValueKind.DateOnly && _hasTime)
+        {
+            ThrowHelper.ThrowDateValueNotTaken("A range of DateOnly values has no time, and the format writes a time field.", "start");
+        }
 
-        // A time zone skeleton has no entry either, but Check has thrown for it: a range takes no offset.
+        if (_hasZone)
+        {
+            ThrowHelper.ThrowDateValueNotTaken("The format writes a time zone, and a range takes no offset.", "start");
+        }
+
+        // A time zone skeleton has no entry either, but it has thrown above.
         if (_rangeEntry < 0)
         {
             ThrowHelper.ThrowJoinedFormatRange();
