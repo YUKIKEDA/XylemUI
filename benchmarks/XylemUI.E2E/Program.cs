@@ -45,6 +45,12 @@
 //   frames-heavy N [frames]    the same with N full-window translucent rectangles (Present under GPU load, row R2)
 //   event-latency [samples]    a posted message to the present call and to the display (the stand-in for input latency)
 //   resize-text [passes]       relayout of 10,101 text leaves after a window resize, cache hits and misses
+//   text-style [passes]        no window: a size, then a weight, set on the root column of resize-text's 10,000 text leaves,
+//                              against the same value set on each leaf: the setters' time, the layout pass after them, the
+//                              leaves marked and resolved, and the setters' bytes (row TS1, TextStyleCost.cs)
+//   text-style-buttons [buttons] [passes]  no window: the three setters Fluent.Button's effect writes on N centering rows (1,000
+//                              by default), with the values they hold and with others: their time, the leaves resolved (three
+//                              walks a button) and marked, and the layout pass after a change of the typography (row TS1)
 //   layout [samples]           the four layout times of 10,101 nodes in three scenes (design §3.2, row L1a)
 //   layout-loop scene kind N   one of them (kind change, fixed_row, content, or width; scene absolute: its change) repeated N times on one tree, for a profile
 //   glyph-refused [requests]   a request refused at the atlas's page limit, against a cached one
@@ -216,6 +222,8 @@ return scenario switch
     "frames-heavy" => Frames.Run(Number(2, 120), heavy: Number(1, 20_000), warp: false),
     "event-latency" => EventLatency.Run(Number(1, 100)),
     "resize-text" => CoreCosts.ResizeText(Number(1, 51)),
+    "text-style" => TextStyleCost.Run(Number(1, 21)),
+    "text-style-buttons" => TextStyleCost.Buttons(Number(1, 1_000), Number(2, 21)),
     "layout" => LayoutCost.Run(Number(1, 15)),
     "input-loop" => InputLoop.Run(args.Length > 1 ? args[1] : "wheel", Number(2, 10_000)),
     "layout-loop" => LayoutCost.Loop(args.Length > 1 ? args[1] : "s6b", args.Length > 2 ? args[2] : "change", Number(3, 10_000)),

@@ -366,7 +366,10 @@ public static class Elements
         }
 
         TextLanguage language = tree.DefaultTextLanguage(out IReadOnlySignal<Locale>? locale);
-        NodeHandle node = tree.CreateTextNode(new LayoutStyle(), DefaultTextStyle(language));
+
+        // No field is the leaf's own: it takes the text style of the containers it is put under (design §2.13, "The text style a
+        // container gives"), and the defaults where none gives one.
+        NodeHandle node = tree.CreateTextNode(new LayoutStyle(), DefaultTextStyle(language), TextStyleFields.None);
         tree.Nodes.GetRef(node).Text!.DefaultLanguageOf = locale;
         Own(tree, node);
         return new Element(tree, node);
