@@ -81,8 +81,8 @@ public sealed unsafe class DirectWriteGlyphRasterizer : IGlyphRasterizer, IDispo
     /// <summary>
     /// Initializes a new instance of the <see cref="DirectWriteGlyphRasterizer"/> class.
     /// </summary>
-    /// <exception cref="InvalidOperationException">DirectWrite could not create the factory or the in-memory loader (Windows 10
-    /// version 1703 and later have them).</exception>
+    /// <exception cref="InvalidOperationException">DirectWrite could not create the factory or the in-memory loader (every
+    /// Windows 11 has them).</exception>
     public DirectWriteGlyphRasterizer()
     {
         try

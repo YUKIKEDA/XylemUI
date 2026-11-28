@@ -36,7 +36,7 @@ public sealed unsafe partial class Win32Window
     // The scan code of the right Shift, which Windows does not mark as extended (Avalonia's KeyInterop reads it with MapVirtualKey).
     private const uint RightShiftScanCode = 0x36;
 
-    // ToUnicodeEx's flag that leaves the keyboard's state as it is (Windows 10 1607 and later), so that a dead key still combines.
+    // ToUnicodeEx's flag that leaves the keyboard's state as it is (every Windows 11), so that a dead key still combines.
     private const uint KeepKeyboardState = 1 << 2;
 
     /// <summary>

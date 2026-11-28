@@ -45,7 +45,7 @@ docs/                        設計・判断・ロードマップ・規約（本
 | `benchmarks/compare` | 比較のための同じ場面のアプリ（Avalonia・Flutter・GPUI）と、`build.ps1`・`measure.ps1`・`summarize.py`。リポジトリのビルドの設定は引き継がない |
 | `samples/HelloWindow` | D3D11 で矩形と 1 行のテキストを描くウィンドウのサンプル。`--auto` で S1・S7・S8b の検査（120 フレーム、フレームの CPU 時間）をして終了する。画素とテキストのインクは `OffscreenRenderTests` が確かめる（P02a2）（`PublishAot`。フォントは埋め込みリソース） |
 | `src/XylemUI.Testing` | テスト基盤（設計書 §12、行 P02a）。UI スレッドを 1 つ持つ `HeadlessSession`、OS のウィンドウを作らない `HeadlessApp`（ポインタ・キーボード・フォーカスの注入、`PumpAndSettle`、`Find` / `FindAll`、`AssertNoLeakedScopes`、`SaveScreenshotAsync`、`MatchesGoldenAsync`）、描画を差し込む `HeadlessRenderer`、PNG の読み書き、仮想の時計 `TestTime`、テスト用のフォント（`TestFontProvider`、`Fonts/` の OFL のサブセットを埋め込む）、`PerformanceAssert.DoesNotAllocate`。Core の internal を `InternalsVisibleTo` で使う（`net10.0`。時計とスレッドを持つので `BannedSymbols.txt` の外） |
-| `src/XylemUI.Testing.D3D11` | ヘッドレスのアプリに差し込む WARP の描画（`WarpRenderer`、設計書 §12.3「差し込み」）。`D3D11Renderer` をウィンドウなしでテクスチャに描かせ、フレームを読み戻す。グリフは DirectWrite で描く（`net10.0-windows10.0.17763.0`） |
+| `src/XylemUI.Testing.D3D11` | ヘッドレスのアプリに差し込む WARP の描画（`WarpRenderer`、設計書 §12.3「差し込み」）。`D3D11Renderer` をウィンドウなしでテクスチャに描かせ、フレームを読み戻す。グリフは DirectWrite で描く（`net10.0-windows10.0.22000.0`） |
 | `src/XylemUI.Testing.XUnit` | xUnit v3 の `[UiFact]` / `[UiTheory]`。テストのクラスと本体を `HeadlessSession` の UI スレッドで動かす（`net10.0`） |
 | `samples/Counter` | 部品の API の最初のアプリ（設計書 §2.13）。`Column` に `Text`（`clicks: N`）と `Button`。テストが根の関数（`CounterApp.Counter`）を使う（`PublishAot`、`WinExe`）。ホストは `samples/PlatformHost.targets` が RID で選んで参照する（`samples/Todo` も同じ。設計書 §6.0「ホストの選び方」） |
 | `tests/Shared` | すべてのテストのプロジェクトが `tests/Directory.Build.props` でリンクするファイル。`UiThreadFixture` は、テストのコードを `HeadlessSession` の UI スレッドに渡す（プロセスで UI スレッドは 1 つ） |

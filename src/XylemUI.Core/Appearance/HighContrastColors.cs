@@ -1,7 +1,7 @@
 namespace XylemUI;
 
 /// <summary>
-/// The eight system colors of a high-contrast theme that Windows 10 and 11 support (design §13.2, "OS の見た目"): the colors the user
+/// The eight system colors of a high-contrast theme that Windows 11 supports (design §13.2, "OS の見た目"): the colors the user
 /// chose, which a theme puts in place of its own.
 /// </summary>
 /// <param name="Window">The background of a window (Windows' <c>COLOR_WINDOW</c>, CSS's <c>Canvas</c>).</param>

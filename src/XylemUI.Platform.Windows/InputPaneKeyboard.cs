@@ -24,7 +24,7 @@ internal interface ITouchKeyboard
 
 /// <summary>
 /// The OS's touch keyboard of one window: the window's <c>InputPane</c>, taken through <c>IInputPaneInterop::GetForWindow</c>
-/// (Windows 10 1607 and later), whose <c>TryShow</c> and <c>TryHide</c> show and hide it. Chromium shows it itself in the same way,
+/// (every Windows 11), whose <c>TryShow</c> and <c>TryHide</c> show and hide it. Chromium shows it itself in the same way,
 /// after TSF's own policy did not show and hide it in step (commit 125cf9f247).
 /// </summary>
 internal sealed unsafe class InputPaneKeyboard : ITouchKeyboard, IDisposable
@@ -36,7 +36,7 @@ internal sealed unsafe class InputPaneKeyboard : ITouchKeyboard, IDisposable
     private InputPaneKeyboard(IInputPane2* pane) => _pane = pane;
 
     /// <summary>
-    /// Takes a window's <c>InputPane</c>; <see langword="null"/> when the OS has none (before Windows 10 1607, or without the WinRT
+    /// Takes a window's <c>InputPane</c>; <see langword="null"/> when the OS has none
     /// class), and the keyboard is then not shown by the app.
     /// </summary>
     /// <param name="window">The window's handle.</param>

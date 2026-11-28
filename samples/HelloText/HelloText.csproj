@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <!-- The glyphs are drawn by DirectWrite (XylemUI.Platform.Windows, design §5.0.3). -->
-    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.22000.0</TargetFramework>
     <PublishAot>true</PublishAot>
   </PropertyGroup>
   <ItemGroup>
