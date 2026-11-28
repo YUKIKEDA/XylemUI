@@ -1,11 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>XylemUI.Rendering.D3D11</RootNamespace>
     <Description>The Direct3D 11 renderer of XylemUI.</Description>
     <!-- Interop project (.cursor/rules/interop.mdc). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Plain net10.0, as the Windows host that references it (design §6.0, "ホストの選び方"); the attribute is the oldest Windows
+         it runs on (design §1), which the platform analyzer (CA1416) holds its callers to. -->
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>windows10.0.22000</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XylemUI.Core\XylemUI.Core.csproj" />
     <!-- The glyph atlas pages the renderer uploads (design §5.0.3). -->
