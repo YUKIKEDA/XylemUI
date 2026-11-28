@@ -231,6 +231,15 @@ internal static class ThrowHelper
         );
 
     /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when text is parsed with a date format that does not parse it: a date takes
+    /// the format of <c>yMd</c>, and a date and a time the format of <c>yMd</c> joined with <c>jm</c>.
+    /// </summary>
+    /// <param name="message">The condition that failed.</param>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowDateParseNotSupported(string message) => throw new InvalidOperationException(message);
+
+    /// <summary>
     /// Throws <see cref="ArgumentException"/> for a range whose start is after its end.
     /// </summary>
     [DoesNotReturn]

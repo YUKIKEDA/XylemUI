@@ -1397,6 +1397,324 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
+    /// In every locale, a format of yMd reads back the dates it writes, and yMd joined with jm the dates and times, both without and
+    /// with the 24-hour form (design §4.11, "Parsing short dates", "Parsing date and time text", and "Tests").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Every entry of CldrLocales.All, and root.
+    /// - The dates 0001-01-01, 0026-02-03, 2024-02-29, 2026-02-03, 2026-11-14, and 9999-12-31, and the times 00:00 (12 AM), 00:59,
+    ///   01:05, 11:59, 12:00 (12 PM), 12:30, 13:05, and 23:59 on 2026-02-03 and 9999-12-31.
+    ///
+    /// Steps:
+    /// - Write each date with yMd and read it back; write each date and time with yMd joined with jm, without and with the 24-hour
+    ///   form, and read it back.
+    ///
+    /// Expected:
+    /// - Each text is read, to the value written; a date and time has the Kind Unspecified and no seconds.
+    /// </remarks>
+    [Fact]
+    public void TryParse_EveryLocale_ReadsWhatTheFormatsWrite()
+    {
+        DateOnly[] dates = [new(1, 1, 1), new(26, 2, 3), new(2024, 2, 29), new(2026, 2, 3), new(2026, 11, 14), new(9999, 12, 31)];
+        TimeOnly[] times = [new(0, 0), new(0, 59), new(1, 5), new(11, 59), new(12, 0), new(12, 30), new(13, 5), new(23, 59)];
+        char[] buffer = new char[128];
+        foreach (LocaleData data in CldrLocales.All.Append(LocaleData.Root))
+        {
+            string tag = data.Locale.ToLanguageTag();
+            DateFormatter yMd = DateFormatter.FromSkeleton(data, "yMd", false);
+            foreach (DateOnly date in dates)
+            {
+                Assert.True(yMd.TryFormat(date, buffer, out int written));
+                string text = new(buffer, 0, written);
+                Assert.True(yMd.TryParse(text, out DateOnly read), tag + ": " + text);
+                Assert.Equal(date, read);
+            }
+
+            foreach (bool use24HourFormat in new[] { false, true })
+            {
+                DateFormatter joined = DateFormatter.FromSkeletons(data, "yMd", "jm", use24HourFormat);
+                foreach (DateOnly date in new[] { new DateOnly(2026, 2, 3), new DateOnly(9999, 12, 31) })
+                {
+                    foreach (TimeOnly time in times)
+                    {
+                        DateTime value = date.ToDateTime(time);
+                        Assert.True(joined.TryFormat(value, buffer, out int written));
+                        string text = new(buffer, 0, written);
+                        Assert.True(joined.TryParse(text, out DateTime read), tag + ": " + text);
+                        Assert.Equal(value, read);
+                        Assert.Equal(DateTimeKind.Unspecified, read.Kind);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A day the month does not have, a field outside its range, and text that does not follow the pattern are not read, and the
+    /// value is the default (design §4.11, "Parsing short dates").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMd, M/d/y.
+    ///
+    /// Steps:
+    /// - Read each row's text.
+    ///
+    /// Expected:
+    /// - False and default(DateOnly) for the rows that are not read: February 30th, February 29th of 2026, the month 0 or 13, the
+    ///   day 0 or 32, the year 0 or 10000, a year of 10 digits (more than the 9 a field takes), another separator, a missing or an
+    ///   extra field, a letter, two separators, and empty text. The others are read: February 29th of 2024, a year of 9 digits,
+    ///   digits with leading zeros, and full-width digits mixed with ASCII ones.
+    /// </remarks>
+    /// <param name="text">The text.</param>
+    /// <param name="expected">The date read, yyyy-MM-dd, or null when the text is not read.</param>
+    [Theory]
+    [InlineData("2/30/2026", null)]
+    [InlineData("2/29/2026", null)]
+    [InlineData("2/29/2024", "2024-02-29")]
+    [InlineData("0/1/2026", null)]
+    [InlineData("13/1/2026", null)]
+    [InlineData("1/0/2026", null)]
+    [InlineData("1/32/2026", null)]
+    [InlineData("12/31/0", null)]
+    [InlineData("1/1/10000", null)]
+    [InlineData("1/1/000002026", "2026-01-01")]
+    [InlineData("1/1/0000002026", null)]
+    [InlineData("01/03/02026", "2026-01-03")]
+    [InlineData("１/3/２０２6", "2026-01-03")]
+    [InlineData("1-3-2026", null)]
+    [InlineData("1/3", null)]
+    [InlineData("1/3/2026/", null)]
+    [InlineData("1/3/2026 1", null)]
+    [InlineData("1/3/x2026", null)]
+    [InlineData("1//3/2026", null)]
+    [InlineData("", null)]
+    public void TryParse_ImpossibleDaysAndOtherText_AreFalse(string text, string? expected)
+    {
+        DateFormatter yMd = DateFormatter.FromSkeleton(CldrLocales.En, "yMd", false);
+
+        bool read = yMd.TryParse(text, out DateOnly value);
+
+        Assert.Equal(expected is not null, read);
+        Assert.Equal(expected is null ? default : DateOnly.FromDateTime(ParseClock(expected)), value);
+    }
+
+    /// <summary>
+    /// The year is read as written: a pattern of y takes 26 as the year 26, not as 2026 (design §4.11, "Reading the year").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMd, M/d/y, and ja's, y/M/d.
+    ///
+    /// Steps:
+    /// - Read 2/3/26 with en's and 26/2/3 with ja's.
+    ///
+    /// Expected:
+    /// - Both are 0026-02-03.
+    /// </remarks>
+    [Fact]
+    public void TryParse_YearOfTwoDigits_IsThatYear()
+    {
+        Assert.True(DateFormatter.FromSkeleton(CldrLocales.En, "yMd", false).TryParse("2/3/26", out DateOnly en));
+        Assert.True(DateFormatter.FromSkeleton(CldrLocales.Ja, "yMd", false).TryParse("26/2/3", out DateOnly ja));
+
+        Assert.Equal(new DateOnly(26, 2, 3), en);
+        Assert.Equal(new DateOnly(26, 2, 3), ja);
+    }
+
+    /// <summary>
+    /// A space of a pattern takes U+0020, U+00A0, U+202F, or U+3000, one of them; the bidi marks are skipped anywhere and white space
+    /// at the ends; full-width punctuation is read as its ASCII character (design §4.11, "Separators, am and pm, full-width
+    /// symbols").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMd joined with jm, which writes 2/3/2026, 1:05^PM; ar's yMd (d!/M!/y) and ar-EG's (Arabic-Indic digits); ja's yMd
+    ///   (y/M/d) and its yMd joined with jm, which writes 2026/11/14 13:05.
+    ///
+    /// Steps:
+    /// - Read en's text with U+0020, U+00A0, U+202F, and U+3000 before PM, and with a tab and with two spaces there.
+    /// - Read ar's text of 2026-02-03 with its U+200F taken out, with marks and spaces around it and a mark inside the year, and
+    ///   ar-EG's without its marks.
+    /// - Read ja's ２０２６／１１／１４ and ２０２６/１１/１４, and the joined text written all in full-width (U+3000 for the space).
+    /// - Read en's yMd text after 300 spaces, longer than the text parsed on the stack.
+    ///
+    /// Expected:
+    /// - en's four spaces are read as 2026-02-03 13:05, and the tab and the two spaces are not read.
+    /// - ar's texts are 2026-02-03, and ja's 2026-11-14 and 2026-11-14 13:05; the text after the spaces is 2026-02-03.
+    /// </remarks>
+    [Fact]
+    public void TryParse_SpacesBidiMarksAndFullWidthSymbols_AreRead()
+    {
+        DateFormatter en = DateFormatter.FromSkeletons(CldrLocales.En, "yMd", "jm", false);
+        var afternoon = new DateTime(2026, 2, 3, 13, 5, 0);
+        foreach (char space in new[] { ' ', (char)0x00A0, (char)0x202F, (char)0x3000 })
+        {
+            string text = "2/3/2026, 1:05" + space + "PM";
+            Assert.True(en.TryParse(text, out DateTime value), ((int)space).ToString("X4", CultureInfo.InvariantCulture));
+            Assert.Equal(afternoon, value);
+        }
+
+        Assert.False(en.TryParse("2/3/2026, 1:05\tPM", out DateTime _));
+        Assert.False(en.TryParse("2/3/2026, 1:05  PM", out DateTime _));
+
+        DateFormatter ar = DateFormatter.FromSkeleton(ByTag["ar"], "yMd", false);
+        string arText = Write(ar, Moment);
+        Assert.Equal(Marked("3!/2!/2026"), arText);
+        var day = new DateOnly(2026, 2, 3);
+        string[] arTexts = [arText.Replace("‏", string.Empty, StringComparison.Ordinal), Marked(" !3/2/20|26@ "), Marked("3!/!2/2026")];
+        foreach (string text in arTexts)
+        {
+            Assert.True(ar.TryParse(text, out DateOnly value), text);
+            Assert.Equal(day, value);
+        }
+
+        Assert.True(DateFormatter.FromSkeleton(ByTag["ar-EG"], "yMd", false).TryParse("٣/٢/٢٠٢٦", out DateOnly arabicIndic));
+        Assert.Equal(day, arabicIndic);
+
+        DateFormatter ja = DateFormatter.FromSkeleton(CldrLocales.Ja, "yMd", false);
+        Assert.True(ja.TryParse("２０２６／１１／１４", out DateOnly fullWidth));
+        Assert.True(ja.TryParse("２０２６/１１/１４", out DateOnly mixed));
+        Assert.Equal(new DateOnly(2026, 11, 14), fullWidth);
+        Assert.Equal(new DateOnly(2026, 11, 14), mixed);
+        DateFormatter jaJoined = DateFormatter.FromSkeletons(CldrLocales.Ja, "yMd", "jm", false);
+        var november = new DateTime(2026, 11, 14, 13, 5, 0);
+        Assert.Equal("2026/11/14 13:05", jaJoined.Format(november));
+        Assert.True(jaJoined.TryParse(FullWidth("2026/11/14 13:05"), out DateTime jaTime));
+        Assert.Equal(november, jaTime);
+
+        DateFormatter enDate = DateFormatter.FromSkeleton(CldrLocales.En, "yMd", false);
+        Assert.True(enDate.TryParse(new string(' ', 300) + "2/3/2026", out DateOnly afterSpaces));
+        Assert.Equal(day, afterSpaces);
+    }
+
+    /// <summary>
+    /// The am and pm of the pattern are read ordinally and ignoring case, in their abbreviated form only; h takes 1 to 12 and 12 am is
+    /// the hour 0; H takes 0 to 23; a minute takes 0 to 59 (design §4.11, "Separators, am and pm, full-width symbols" and "The hour
+    /// fields and the result").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMd joined with jm in 12 hours (M/d/y, h:mm^a; am and pm abbreviated AM and PM, narrow a and p) and in 24 hours
+    ///   (M/d/y, HH:mm).
+    ///
+    /// Steps:
+    /// - Read each row's text with the format of its form.
+    ///
+    /// Expected:
+    /// - The row's clock, or false: PM, pm, and Pm the same; 12 AM 00:00 and 12 PM 12:00; the narrow p, the hour 13 or 0 with h,
+    ///   13:05 without am or pm in 12 hours, a minute of 60, the hour 24 with H, and am or pm in 24 hours are not read.
+    /// </remarks>
+    /// <param name="use24HourFormat">Whether the format is the 24-hour one.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="expected">The clock read, yyyy-MM-ddTHH:mm:ss, or null when the text is not read.</param>
+    [Theory]
+    [InlineData(false, "2/3/2026, 1:05 PM", "2026-02-03T13:05:00")]
+    [InlineData(false, "2/3/2026, 1:05 pm", "2026-02-03T13:05:00")]
+    [InlineData(false, "2/3/2026, 1:05 Pm", "2026-02-03T13:05:00")]
+    [InlineData(false, "2/3/2026, 1:05 am", "2026-02-03T01:05:00")]
+    [InlineData(false, "2/3/2026, 12:00 AM", "2026-02-03T00:00:00")]
+    [InlineData(false, "2/3/2026, 12:30 pm", "2026-02-03T12:30:00")]
+    [InlineData(false, "2/3/2026, 1:05 p", null)]
+    [InlineData(false, "2/3/2026, 13:05 PM", null)]
+    [InlineData(false, "2/3/2026, 0:05 AM", null)]
+    [InlineData(false, "2/3/2026, 13:05", null)]
+    [InlineData(false, "2/3/2026, 1:60 PM", null)]
+    [InlineData(false, "2/30/2026, 1:05 PM", null)]
+    [InlineData(true, "2/3/2026, 13:05", "2026-02-03T13:05:00")]
+    [InlineData(true, "2/3/2026, 0:05", "2026-02-03T00:05:00")]
+    [InlineData(true, "2/3/2026, 23:59", "2026-02-03T23:59:00")]
+    [InlineData(true, "2/3/2026, 24:00", null)]
+    [InlineData(true, "2/3/2026, 1:05 PM", null)]
+    public void TryParse_DayPeriodsAndHours_AreReadInTheirRanges(bool use24HourFormat, string text, string? expected)
+    {
+        DateFormatter joined = DateFormatter.FromSkeletons(CldrLocales.En, "yMd", "jm", use24HourFormat);
+
+        bool read = joined.TryParse(text, out DateTime value);
+
+        Assert.Equal(expected is not null, read);
+        Assert.Equal(expected is null ? default : ParseClock(expected), value);
+    }
+
+    /// <summary>
+    /// Only the format of yMd parses a date, and only yMd joined with jm a date and a time; any other format throws
+    /// InvalidOperationException (design §4.11, the API of DateFormatter).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's formats of yMMMd, jm, and yMd; yMd joined with jm, yMMMd joined with jm, and yMd joined with Hm.
+    ///
+    /// Steps:
+    /// - Read a date with each format but yMd, and a date and a time with each but yMd joined with jm.
+    ///
+    /// Expected:
+    /// - Each throws InvalidOperationException.
+    /// </remarks>
+    [Fact]
+    public void TryParse_FormatsThatDoNotParse_Throw()
+    {
+        DateFormatter yMMMd = DateFormatter.FromSkeleton(CldrLocales.En, "yMMMd", false);
+        DateFormatter jm = DateFormatter.FromSkeleton(CldrLocales.En, "jm", false);
+        DateFormatter yMd = DateFormatter.FromSkeleton(CldrLocales.En, "yMd", false);
+        DateFormatter joined = DateFormatter.FromSkeletons(CldrLocales.En, "yMd", "jm", false);
+        DateFormatter monthJoined = DateFormatter.FromSkeletons(CldrLocales.En, "yMMMd", "jm", false);
+        DateFormatter hourJoined = DateFormatter.FromSkeletons(CldrLocales.En, "yMd", "Hm", false);
+
+        Assert.Throws<InvalidOperationException>(() => yMMMd.TryParse("Feb 3, 2026", out DateOnly _));
+        Assert.Throws<InvalidOperationException>(() => jm.TryParse("1:05 PM", out DateOnly _));
+        Assert.Throws<InvalidOperationException>(() => joined.TryParse("2/3/2026", out DateOnly _));
+        Assert.Throws<InvalidOperationException>(() => yMd.TryParse("2/3/2026, 1:05 PM", out DateTime _));
+        Assert.Throws<InvalidOperationException>(() => jm.TryParse("1:05 PM", out DateTime _));
+        Assert.Throws<InvalidOperationException>(() => monthJoined.TryParse("Feb 3, 2026, 1:05 PM", out DateTime _));
+        Assert.Throws<InvalidOperationException>(() => hourJoined.TryParse("2/3/2026, 13:05", out DateTime _));
+    }
+
+    /// <summary>
+    /// Parsing a date and a date and time allocates nothing (design §4.11, "Allocation and threads"; §11.3's Zero-Alloc check).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMd joined with jm, ar's yMd, and ja's yMd; the texts, made before the measured runs: en's 2/3/2026, 1:05 PM, ar's
+    ///   3/2/2026 with its marks, ja's ２０２６／１１／１４, and en's 2/30/2026, 1:05 PM, which is not read.
+    ///
+    /// Steps:
+    /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: read the four texts.
+    ///
+    /// Expected:
+    /// - No byte is allocated, and every run read the first three and not the fourth.
+    /// </remarks>
+    [Fact]
+    public void Parsing_AllocatesNothing()
+    {
+        DateFormatter en = DateFormatter.FromSkeletons(CldrLocales.En, "yMd", "jm", false);
+        DateFormatter ar = DateFormatter.FromSkeleton(ByTag["ar"], "yMd", false);
+        DateFormatter ja = DateFormatter.FromSkeleton(CldrLocales.Ja, "yMd", false);
+        string enText = "2/3/2026, 1:05 PM";
+        string arText = Write(ar, Moment);
+        string jaText = "２０２６／１１／１４";
+        string impossible = "2/30/2026, 1:05 PM";
+        int done = 0;
+
+        int runs = PerformanceAssert.DoesNotAllocate(
+            1_000,
+            _ =>
+            {
+                bool all = en.TryParse(enText, out DateTime _);
+                all &= ar.TryParse(arText, out DateOnly _);
+                all &= ja.TryParse(jaText, out DateOnly _);
+                all &= !en.TryParse(impossible, out DateTime _);
+                if (all)
+                {
+                    done++;
+                }
+            }
+        );
+
+        Assert.Equal(runs, done);
+    }
+
+    /// <summary>
     /// The tool's counts of distinct date tables, and that a date's digits are the number table's (design §4.11, "Tests").
     /// </summary>
     /// <remarks>
@@ -1522,6 +1840,18 @@ public sealed class DateFormatterTests
         byte[] utf8 = Encoding.UTF8.GetBytes(text);
         bytes.Add((byte)utf8.Length);
         bytes.AddRange(utf8);
+    }
+
+    // The text with each ASCII character from U+0021 to U+007E as its full-width form (U+FF01 to U+FF5E) and each space as U+3000.
+    private static string FullWidth(string text)
+    {
+        var fullWidth = new StringBuilder(text.Length);
+        foreach (char character in text)
+        {
+            fullWidth.Append(character == ' ' ? (char)0x3000 : (char)(character + 0xFEE0));
+        }
+
+        return fullWidth.ToString();
     }
 
     // The text with the marks of the class comment replaced by the characters they stand for.

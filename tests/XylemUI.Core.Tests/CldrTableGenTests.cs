@@ -326,6 +326,16 @@ public sealed class CldrTableGenTests
                     "The interval pattern earliestFirst: of de has nothing after its prefix."
                 },
                 { Gregorian, "\"h\": \"h a\"", "\"h\": \"K a\"", "The pattern K a of de has a field the formats do not write." },
+                { Gregorian, "\"yMd\": \"M/d/y\"", "\"yMd\": \"M/d/y G\"", "The yMd pattern M/d/y G of de has a field the parsing does not read." },
+                { Gregorian, "\"yMd\": \"M/d/y\"", "\"yMd\": \"M/d\"", "The yMd pattern M/d of de has a field the parsing does not read." },
+                { Gregorian, "\"yMd\": \"M/d/y\"", "\"yMd\": \"MMM/d/y\"", "The yMd pattern MMM/d/y of de has a field the parsing does not read." },
+                {
+                    "cldr-dates-full/main/en/ca-gregorian.json",
+                    "\"hm\": \"h:mm a\"",
+                    "\"hm\": \"h:mm:ss a\"",
+                    "The jm pattern h:mm:ss a of en has a field the parsing does not read."
+                },
+                { Gregorian, "\"Hm\": \"HH:mm\"", "\"Hm\": \"HH:mm:ss\"", "The jm pattern HH:mm:ss of de has a field the parsing does not read." },
             };
         }
     }
@@ -1000,8 +1010,9 @@ public sealed class CldrTableGenTests
     /// Date data the formats cannot write stops the generator: an hourFormat that is not a positive and a negative pattern of H or
     /// HH and mm, a gmtFormat, a joining pattern, or an intervalFormatFallback without each placeholder once, a joining pattern with
     /// letters next to a quote, an interval skeleton with a character that is not a letter, an interval pattern that is a prefix
-    /// alone (the only pattern whose first part would be empty; design §4.11, "Split in two"), and a pattern of the hour with K,
-    /// whose interval patterns ICU's adjustFieldWidth would rewrite (PR #966's review).
+    /// alone (the only pattern whose first part would be empty; design §4.11, "Split in two"), a pattern of the hour with K,
+    /// whose interval patterns ICU's adjustFieldWidth would rewrite (PR #966's review), and a yMd or jm pattern with a field other
+    /// than those parsing reads, or without one of them (design §4.11, "The generator's stop").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -1010,7 +1021,10 @@ public sealed class CldrTableGenTests
     ///   Time-Day-Of-Week whose letter b follows a quote, and one whose letter b comes before a quote; an intervalFormatFallback
     ///   with {1} twice; an interval item -y, first in byte order; the d item earliestFirst: alone; the h format K a, ja's hour
     ///   letter (aK時) in a locale whose hour is h. The pattern table's check of j's pattern stops the tool on K before the interval
-    ///   table reads the pattern of the hour.
+    ///   table reads the pattern of the hour. The yMd format M/d/y G (an era), M/d (no year), and MMM/d/y (a month as text, which the matcher keeps
+    ///   as ICU's adjustFieldTypes keeps a month's length); the hm format h:mm:ss a, en's jm in
+    ///   its hour h (de's jm is its Hm); and the Hm format HH:mm:ss, de's 24-hour jm. Each has only fields the formats write, so that the check of the
+    ///   parsed patterns, not the check of every pattern, stops the tool.
     ///
     /// Steps:
     /// - Run the tool into an empty directory.
