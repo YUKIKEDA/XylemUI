@@ -3757,7 +3757,7 @@ public static partial class Localization
 }
 ```
 
-**メッセージの辞書（行 LC3。Issue #910 の Grill の 6 巡目と、Issue #982 の Grill の 4 巡でオーナーが決定）:**
+**メッセージの辞書（行 LC3。Issue #910 の Grill の 6 巡目と、Issue #982 の Grill の 5 巡でオーナーが決定）:**
 
 - **入力:** ARB（JSON）。ロケールごとに 1 ファイルで、メッセージごとに `@キー` の欄へ説明と差し込みの型を書く。Flutter の `gen-l10n` と同じ形式なので、ARB を読む翻訳ツールをそのまま使える。ただし、メッセージの意味は ICU MessageFormat 1 に合わせるので、`=0`・`=1`・`=2` と、`'` のエスケープでは、同じ ARB が Flutter と違う結果になる場合がある（下の「構文」。Issue #910 の Grill でオーナーが決定）。
 - **生成:** `XylemUI.Generators` の Source Generator が、ビルド時に ARB を読み、メッセージごとに C# のメンバーを生成する。差し込みはメソッドの引数になる。実行時には構文を解釈しない。リフレクションも使わない（§0.1）。
@@ -3787,7 +3787,7 @@ ICU MessageFormat 1 の範囲で、意味も ICU に合わせる。名前付き�
   - **引用が始まる所:** 1 つの `'` は、すぐ後ろが構文の文字の時だけ引用を始める。`DOUBLE_OPTIONAL` の文書は、その文字を "a curly brace {}"、"a pipe symbol | if inside a choice format"、"a pound symbol # if inside a plural format" と挙げる。User Guide は "an ASCII apostrophe only starts quoted text if it immediately precedes a character that requires quoting" と書き、入れ子の文でも外と同じに働くと書く。XylemUI は `choice` を受けないので、`'|` は引用を始めない。`'#` が引用を始めるのは、`plural` と `selectordinal` のすぐ中の文だけである（`MessageFormat` の文書の "plus the '#' sign in a messageText immediately inside a pluralStyle"）。入れ子の `select` の中では `#` は構文の文字でないので、`'#` は `'` と `#` の 2 文字になる。
   - **ほかの `'`:** 文字の `'` のままである（`don't` は `don't`）。引用は次の 1 つの `'` で終わる（`'{name}'` は `{name}` の文字）。
   - **縦棒の前の `'`:** ただの文字である。XylemUI は `choice` を受けないためである。Issue #910 の決定の「`'` は `{`・`}`・`#`・縦棒の前でだけ引用を始める」は、この決定で改めた（Issue #982 の Grill でオーナーが決定）。
-  - **閉じない引用:** `'{` の後ろに `'` が無い文は、書き間違いとしてビルドのエラーにする。ICU は文の終わりまでを引用と読むが、この形は採らない（Issue #982 の Grill でオーナーが決定）。
+  - **閉じない引用:** 引用を始めた `'`（`'{` と、`plural`・`selectordinal` のすぐ中の `'#`）の後ろに `'` が無い文は、書き間違いとしてビルドのエラーにする。ICU は文の終わりまでを引用と読むが、この形は採らない（Issue #982 の Grill でオーナーが決定）。
 
 **差し込みの型（Issue #910 の Grill でオーナーが決定）:**
 
@@ -3803,6 +3803,8 @@ ICU MessageFormat 1 の範囲で、意味も ICU に合わせる。名前付き�
   | `DateOnly` | `DateOnly` |
   | `TimeOnly` | `TimeOnly` |
   | `DateTimeOffset` | `DateTimeOffset` |
+
+  Dart の `num` は `double` も取るが、生成するメソッドの引数は `decimal` なので、アプリの書き手は `double` の値をそのまま渡せない。C# に `double` から `decimal` への暗黙の変換は無く、明示の変換は `NaN`・無限大・`decimal` の範囲の外の値で `OverflowException` を投げる。`double` の値を渡すなら、ARB の `type` を `double` にする。
 
 - **`plural` と `selectordinal`:** `plural` を動かせるのは、整数の型と `decimal` である。`selectordinal` は整数の型だけである（Issue #982 の Grill でオーナーが決定）。`decimal` を受けるのは、見える小数の桁を保つためである。英語の `1` と `1.0` は区分が違う（下の「複数形」の「数の渡し方」）。区分は、`PluralRules.Select` と `SelectOrdinal`（下の「複数形」）で選ぶ。`SelectOrdinal` は `long` だけを受ける。Flutter は `plural` に `num` と `int` を受ける（`gen_l10n_types.dart` 591〜596 行目）。
 - **型を書かない差し込み:** `plural` に使えば `long`、`select` に使えば `string` と推す。ほかはエラーにする。`object` は箱に入れるので使わない。Flutter は、型の無い差し込みを `plural` なら `num`、`select` なら `String`、ほかは `Object` にする（同じファイルの 591〜612 行目）。
