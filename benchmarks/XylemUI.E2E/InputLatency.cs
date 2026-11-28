@@ -51,10 +51,7 @@ internal static unsafe class InputLatency
         int presses = int.Parse(External.Option(args, "--presses") ?? "200", CultureInfo.InvariantCulture);
         int runs = int.Parse(External.Option(args, "--runs") ?? "1", CultureInfo.InvariantCulture);
         string appArgs = (prefix + (isStatic ? " --static" : string.Empty)).Trim();
-        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 15063))
-        {
-            _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        }
+        _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
         string work = Path.Combine(Path.GetTempPath(), "xylemui-e2e-" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
         _ = Directory.CreateDirectory(work);

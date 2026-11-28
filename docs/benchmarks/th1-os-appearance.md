@@ -8,7 +8,7 @@
 - (d) 明暗、アクセントの色、ハイコントラストを切り替えた時に、普通のトップレベルのウィンドウに届くメッセージ（`WM_SETTINGCHANGE` とその lParam の文字列、`WM_SYSCOLORCHANGE`、`WM_THEMECHANGED`、`WM_DWMCOLORIZATIONCOLORCHANGED`）と、`UISettings.ColorValuesChanged` が呼ばれるスレッド
 - (e) `DwmSetWindowAttribute` の属性 20 と 19（`DWMWA_USE_IMMERSIVE_DARK_MODE`）の HRESULT と、題名の棒が実際に暗くなるか
 
-**確かめていないこと: Windows 10 1809。この機械は Windows 11 である。** 設計書 §1 の最も古い Windows（1809）で `UISettings` の 7 つのアクセントの色が返るか、1809 で効く属性の値が 19 か 20 かは、この記録では分からない。この記録の後、最も古い Windows は Windows 11（ビルド 22000）になり（Issue #897 でオーナーが決定）、1809 は確かめなくてよくなった。
+**確かめていないこと: Windows 10 1809。この機械は Windows 11 である。** 当時の設計書 §1 の最も古い Windows（1809。今は Windows 11）で `UISettings` の 7 つのアクセントの色が返るか、1809 で効く属性の値が 19 か 20 かは、この記録では分からない。この記録の後、最も古い Windows は Windows 11（ビルド 22000）になり（Issue #897 でオーナーが決定）、1809 は確かめなくてよくなった。
 
 spike のコードは main に入れていない。ブランチ `spike/888-th1-os`の `spike/OsAppearance/` にある。XylemUI を参照せず、パッケージも使わない。Windows の呼び出しは、すべて `LibraryImport` と手で書いた vtable である。
 

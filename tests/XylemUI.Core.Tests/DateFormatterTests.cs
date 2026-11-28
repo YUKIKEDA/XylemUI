@@ -1412,6 +1412,10 @@ public sealed class DateFormatterTests
     ///
     /// Expected:
     /// - Each text is read, to the value written; a date and time has the Kind Unspecified and no seconds.
+    ///
+    /// The parser reads pm before am and reads digits greedily, so a locale whose am starts with its pm, or a pattern with two number
+    /// fields and no separator between them, would be misread; the generator does not stop on either, and CLDR 49 has neither. When
+    /// a new CLDR makes this test fail, look at how am and pm are compared and at fields with no separator first.
     /// </remarks>
     [Fact]
     public void TryParse_EveryLocale_ReadsWhatTheFormatsWrite()
