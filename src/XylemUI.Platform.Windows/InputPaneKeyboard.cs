@@ -36,8 +36,8 @@ internal sealed unsafe class InputPaneKeyboard : ITouchKeyboard, IDisposable
     private InputPaneKeyboard(IInputPane2* pane) => _pane = pane;
 
     /// <summary>
-    /// Takes a window's <c>InputPane</c>; <see langword="null"/> when the OS has none
-    /// class), and the keyboard is then not shown by the app.
+    /// Takes a window's <c>InputPane</c>; <see langword="null"/> when the OS has no <c>InputPane</c> (the WinRT class is not
+    /// there), and the keyboard is then not shown by the app.
     /// </summary>
     /// <param name="window">The window's handle.</param>
     /// <returns>The keyboard, or <see langword="null"/>.</returns>
