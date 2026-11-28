@@ -17,8 +17,9 @@ namespace XylemUI;
 /// <c>v</c> and long (<c>GMT+09:00</c>, <c>GMT+00:00</c>) for <c>zzzz</c> and <c>vvvv</c>; time zone names are not in the tables.
 /// Making a format reads the tables and allocates; <see cref="TryFormat(DateTime, Span{char}, out int)"/>, its overloads, and the
 /// <c>Of</c> methods allocate nothing, and so do the <c>TryParse</c> methods for text of up to 256 characters. The format of
-/// <c>yMd</c> parses a date, and that of <c>yMd</c> joined with <c>jm</c> a date and a time; no other format parses. The first range a format writes or returns reads its interval patterns and allocates;
-/// <c>TryFormatRange</c> and <c>OfRange</c> allocate nothing after that. <see cref="Format"/> makes a string.
+/// <c>yMd</c> parses a date, and that of <c>yMd</c> joined with <c>jm</c> a date and a time; no other format parses. The first
+/// range a format writes or returns reads its interval patterns and allocates; <c>TryFormatRange</c> and <c>OfRange</c> allocate
+/// nothing after that. <see cref="Format"/> makes a string.
 /// </remarks>
 public sealed class DateFormatter
 {
