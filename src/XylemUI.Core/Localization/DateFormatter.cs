@@ -706,8 +706,8 @@ public sealed class DateFormatter
         return reader.ReadString();
     }
 
-    // The pieces of a pattern as parsing reads them: the literals without their bidi marks, the first without the white space at its
-    // start and the last without the white space at its end, as parsing trims the text; a literal left empty is dropped.
+    // The pieces of a pattern as parsing reads them: the literals without their bidi marks; a literal left empty is dropped. No yMd
+    // or jm pattern of CLDR 49 starts or ends with white space, so the literals are not trimmed (a trim survived the mutants).
     private static DatePatternItem[] ParseItems(DatePatternItem[] items, string pattern)
     {
         var parsed = new List<DatePatternItem>(items.Length);
@@ -728,8 +728,6 @@ public sealed class DateFormatter
             }
 
             string literal = ParseText.WithoutBidiMarks(item.Literal);
-            literal = i == 0 ? literal.TrimStart() : literal;
-            literal = i == items.Length - 1 ? literal.TrimEnd() : literal;
             if (literal.Length > 0)
             {
                 parsed.Add(item with { Literal = literal });
@@ -1014,18 +1012,39 @@ public sealed class DateFormatter
         return count == 0 ? -1 : value;
     }
 
-    // Reads the pattern's am or pm at a position, ordinally and ignoring case, as ICU's matchString and .NET's TryParseExact compare
-    // them; neither depends on culture data, so it reads them under InvariantGlobalization too.
+    // Reads the pattern's am or pm at a position: each character as Fold compares a separator, and ignoring case ordinally, as ICU's
+    // matchString and .NET's TryParseExact compare them (design §4.11, "Separators, am and pm, full-width symbols"). es-CO's
+    // p.<U+202F>m. is read from p. m. typed with a space. Neither step depends on culture data, so it reads them under
+    // InvariantGlobalization too.
     private bool TryReadDayPeriod(ReadOnlySpan<char> text, ref int at, out bool pm)
     {
         ReadOnlySpan<char> rest = text[at..];
-        pm = rest.StartsWith(_pm, StringComparison.OrdinalIgnoreCase);
-        if (!pm && !rest.StartsWith(_am, StringComparison.OrdinalIgnoreCase))
+        pm = StartsWithFolded(rest, _pm);
+        if (!pm && !StartsWithFolded(rest, _am))
         {
             return false;
         }
 
         at += pm ? _pm.Length : _am.Length;
+        return true;
+    }
+
+    // Whether a text starts with a word, each character folded as a separator is and compared ignoring case ordinally.
+    private static bool StartsWithFolded(ReadOnlySpan<char> text, string word)
+    {
+        if (text.Length < word.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < word.Length; i++)
+        {
+            if (char.ToUpperInvariant(Fold(text[i])) != char.ToUpperInvariant(Fold(word[i])))
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 

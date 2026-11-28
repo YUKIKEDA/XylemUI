@@ -1530,11 +1530,13 @@ public sealed class DateFormatterTests
     /// </summary>
     /// <remarks>
     /// Preconditions:
-    /// - en's yMd joined with jm, which writes 2/3/2026, 1:05^PM; ar's yMd (d!/M!/y) and ar-EG's (Arabic-Indic digits); ja's yMd
+    /// - en's yMd joined with jm, which writes 2/3/2026, 1:05^PM; es-CO's, whose pm is p.^m.; ar's yMd (d!/M!/y) and ar-EG's (Arabic-Indic digits); ja's yMd
     ///   (y/M/d) and its yMd joined with jm, which writes 2026/11/14 13:05.
     ///
     /// Steps:
     /// - Read en's text with U+0020, U+00A0, U+202F, and U+3000 before PM, and with a tab and with two spaces there.
+    /// - Read es-CO's joined text of 2026-02-03 13:05 with its p.<U+202F>m. written p. m., with U+00A0 and with U+3000 inside, as
+    ///   P. M., and in full-width letters and dots; and with p.m., which has no space inside.
     /// - Read ar's text of 2026-02-03 with its U+200F taken out, with marks and spaces around it and a mark inside the year, and
     ///   ar-EG's without its marks.
     /// - Read ja's ２０２６／１１／１４ and ２０２６/１１/１４, and the joined text written all in full-width (U+3000 for the space).
@@ -1542,6 +1544,7 @@ public sealed class DateFormatterTests
     ///
     /// Expected:
     /// - en's four spaces are read as 2026-02-03 13:05, and the tab and the two spaces are not read.
+    /// - es-CO's five texts are read as 2026-02-03 13:05, and the one without the space is not read.
     /// - ar's texts are 2026-02-03, and ja's 2026-11-14 and 2026-11-14 13:05; the text after the spaces is 2026-02-03.
     /// </remarks>
     [Fact]
@@ -1558,6 +1561,19 @@ public sealed class DateFormatterTests
 
         Assert.False(en.TryParse("2/3/2026, 1:05\tPM", out DateTime _));
         Assert.False(en.TryParse("2/3/2026, 1:05  PM", out DateTime _));
+
+        // A space inside am or pm takes the same spaces (es-CO's p.<U+202F>m.), and its case and full-width letters do not matter.
+        DateFormatter esCo = DateFormatter.FromSkeletons(ByTag["es-CO"], "yMd", "jm", false);
+        string esText = esCo.Format(afternoon);
+        Assert.Contains("p. m.", esText, StringComparison.Ordinal);
+        foreach (string pm in new[] { "p. m.", "p. m.", "p.　m.", "P. M.", "ｐ．　ｍ．" })
+        {
+            string text = esText.Replace("p. m.", pm, StringComparison.Ordinal);
+            Assert.True(esCo.TryParse(text, out DateTime value), text);
+            Assert.Equal(afternoon, value);
+        }
+
+        Assert.False(esCo.TryParse(esText.Replace("p. m.", "p.m.", StringComparison.Ordinal), out DateTime _));
 
         DateFormatter ar = DateFormatter.FromSkeleton(ByTag["ar"], "yMd", false);
         string arText = Write(ar, Moment);
