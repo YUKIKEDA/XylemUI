@@ -101,7 +101,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
     /// and the scheduler"), so a window counts as open until it is disposed, when it gives the clock back.
     /// </remarks>
     [UiThreadOnly]
-    public IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height, bool show)
+    public IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height)
     {
         UiThread.VerifyAccess();
         if (_window is not null)
@@ -109,7 +109,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
             throw new InvalidOperationException("A window of the app is open: a second window comes with row MW1 (design §6.0).");
         }
 
-        _window = new Win32PlatformWindow(core, _settings, title, width, height, show, UseWarp, () => _window = null, WrapTarget);
+        _window = new Win32PlatformWindow(core, _settings, title, width, height, UseWarp, () => _window = null, WrapTarget);
         return _window;
     }
 

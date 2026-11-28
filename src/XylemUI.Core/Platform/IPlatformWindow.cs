@@ -69,10 +69,17 @@ internal interface IPlatformWindow : IDisposable
     void Attach();
 
     /// <summary>
-    /// Tells the window that the root function ran and the first frame was drawn: assistive technology that asked while the window
-    /// showed gets the tree (design §4.4.1).
+    /// Tells the window that the root function ran and the first frame was drawn: assistive technology that asked before then gets
+    /// the tree (design §4.4.1).
     /// </summary>
     void RootMounted();
+
+    /// <summary>
+    /// Shows the window, which the host opened hidden: called once, after the first frame was presented and
+    /// <see cref="RootMounted"/>, so that the window shows with its first frame, its title bar, and its backdrop (design §6.0, "The
+    /// order of creation"; Issue #907).
+    /// </summary>
+    void Show();
 
     /// <summary>
     /// Asks the window to close, as its close button does.

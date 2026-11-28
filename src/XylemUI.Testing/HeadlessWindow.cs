@@ -68,6 +68,13 @@ internal sealed class HeadlessWindow(
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Nothing: a headless window shows from the start (<see cref="IsShowing"/>), and the app does not open it through
+    /// <c>XylemApp.OpenWindow</c>, which calls this.
+    /// </remarks>
+    public void Show() { }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Nothing: a headless window closes when the app is disposed.
     /// </remarks>
     public void RequestClose() { }

@@ -36,7 +36,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         {
             var settings = new Win32PlatformSettings();
             using var core = new WindowCore(null, settings, null, null, null);
-            var window = new Win32PlatformWindow(core, settings, "clock", 200, 100, show: false, useWarp: true);
+            var window = new Win32PlatformWindow(core, settings, "clock", 200, 100, useWarp: true);
             HANDLE clock = (HANDLE)window.Renderer.FrameLatencyWaitableObject;
             HANDLE during = Win32MessageLoop.Frames.WaitHandle;
             bool targetIsRenderer = ReferenceEquals(window.Renderer, window.Target);
@@ -85,7 +85,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
                 },
             };
             using var core = new WindowCore(null, app.Settings, app.Clipboard, null, null);
-            var window = (Win32PlatformWindow)app.OpenWindow(core, "wrapped", 200, 100, show: false);
+            var window = (Win32PlatformWindow)app.OpenWindow(core, "wrapped", 200, 100);
             core.Connect(window, new GlyphAtlas(app.CreateRasterizer, threads: 1), Color.FromRgb(0xFFFFFF));
             window.Attach();
             (int width, int height) = window.ClientSize;
@@ -127,12 +127,12 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             using var app = new Win32PlatformApp { UseWarp = true };
             using var first = new WindowCore(null, app.Settings, app.Clipboard, null, null);
             using var second = new WindowCore(null, app.Settings, app.Clipboard, null, null);
-            IPlatformWindow opened = app.OpenWindow(first, "first", 200, 100, show: false);
+            IPlatformWindow opened = app.OpenWindow(first, "first", 200, 100);
             object? firstReads = ((Win32PlatformWindow)opened).Window.SettingsMessageReceived?.Target;
-            Exception? thrown = Record.Exception(() => app.OpenWindow(second, "second", 200, 100, show: false));
+            Exception? thrown = Record.Exception(() => app.OpenWindow(second, "second", 200, 100));
             opened.Dispose();
 
-            IPlatformWindow again = app.OpenWindow(second, "second", 200, 100, show: false);
+            IPlatformWindow again = app.OpenWindow(second, "second", 200, 100);
             object? againReads = ((Win32PlatformWindow)again).Window.SettingsMessageReceived?.Target;
             again.Dispose();
 
@@ -352,7 +352,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
                 use24HourForm = true;
                 int beforeOpen = notices.Count;
 
-                IPlatformWindow window = app.OpenWindow(core, "late setting", 200, 100, show: false);
+                IPlatformWindow window = app.OpenWindow(core, "late setting", 200, 100);
                 window.Dispose();
 
                 Assert.Equal(0, beforeOpen);
@@ -582,7 +582,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
         var core = new WindowCore(null, settings, null, supported, null);
         try
         {
-            var window = new Win32PlatformWindow(core, settings, "host window", 200, 100, show: false, useWarp: true);
+            var window = new Win32PlatformWindow(core, settings, "host window", 200, 100, useWarp: true);
             GlyphAtlas atlas;
             try
             {

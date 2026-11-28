@@ -78,15 +78,22 @@ public static class XylemApp
     }
 
     /// <summary>
-    /// Makes a window core, has <paramref name="app"/> open its window, connects them, runs the root function, draws the first
-    /// frame at the window's size, and gives the tree to assistive technology: steps 4 to 7 of the order of creation (design §6.0).
-    /// What was made is disposed when a step throws.
+    /// Makes a window core, has <paramref name="app"/> open its window hidden, connects them, runs the root function, draws the
+    /// first frame at the window's size, gives the tree to assistive technology, and then shows the window: steps 4 to 7 of the
+    /// order of creation (design §6.0). What was made is disposed when a step throws.
     /// </summary>
+    /// <remarks>
+    /// The first frame runs inside <see cref="WindowCore.Mount"/>, which presents it before it returns, and the root wrapper has
+    /// told the window its title bar and the backdrop by then; the window then shows with them, as Flutter's Windows runner shows
+    /// its window from the callback of its first frame (Issue #907). No loop turn comes between the frame and the show, so a root
+    /// function or a first frame that throws leaves no hidden window behind: the core is disposed, which destroys the window, and
+    /// the exception goes to the caller, as it did when the window showed before the root function ran.
+    /// </remarks>
     /// <param name="app">The host that opens the window.</param>
     /// <param name="text">The text tools of the UI thread; the caller disposes them after the core.</param>
     /// <param name="root">The root function.</param>
     /// <param name="options">The window.</param>
-    /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
+    /// <param name="show"><see langword="true"/> to show the window after its first frame; the tests keep it hidden.</param>
     /// <returns>The window core, which owns the window; the caller disposes it.</returns>
     /// <exception cref="ArgumentException">The options' size is not a positive number, or their supported locales hold a
     /// <see langword="null"/>.</exception>
@@ -109,7 +116,7 @@ public static class XylemApp
         var core = new WindowCore(text, app.Settings, app.Clipboard, options.SupportedLocales, options.ResolveLocale);
         try
         {
-            IPlatformWindow window = app.OpenWindow(core, options.Title, options.Width, options.Height, show);
+            IPlatformWindow window = app.OpenWindow(core, options.Title, options.Width, options.Height);
             GlyphAtlas atlas;
             try
             {
@@ -127,15 +134,24 @@ public static class XylemApp
 
             // The root function in the theme's wrapper the app chose (design §13.2, "根で置くもの"), then the first frame at the
             // window's size in logical pixels: the host's physical size divided by its scale (design §6.0, "The order of creation",
-            // step 7). The OS's appearance is the app tier's settings', which the host read again when it opened the window (design
-            // §13.2, "OS の見た目").
+            // step 7). The window is hidden, and a hidden window has its client size and the scale of its monitor. The OS's
+            // appearance is the app tier's settings', which the host read again when it opened the window (design §13.2,
+            // "OS の見た目").
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
             var size = new Size(width / scale, height / scale);
             core.Mount(root, WindowRoot.ReadWrapper(), app.Settings.Appearance, "XylemApp.Run", size, scale);
 
-            // The tree has its root now: assistive technology that asked while the window showed gets the tree.
+            // The tree has its root now: assistive technology that asked before then gets the tree.
             window.RootMounted();
+
+            // The first frame was presented in Mount, with the title bar and the backdrop the wrapper told: the window shows with
+            // them, not with a light title bar and an empty client area first (Issue #907).
+            if (show)
+            {
+                window.Show();
+            }
+
             return core;
         }
         catch

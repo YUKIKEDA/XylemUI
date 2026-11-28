@@ -48,14 +48,13 @@ internal interface IPlatformApp : IDisposable
     IClipboardBackend Clipboard { get; }
 
     /// <summary>
-    /// Makes a window with the renderer, the frame clock, the input method, and the accessibility adapter paired with it, for
-    /// <paramref name="core"/>, whose tree the adapter reads.
+    /// Makes a hidden window with the renderer, the frame clock, the input method, and the accessibility adapter paired with it, for
+    /// <paramref name="core"/>, whose tree the adapter reads. The window shows when <see cref="IPlatformWindow.Show"/> is called.
     /// </summary>
     /// <param name="core">The window core the window serves.</param>
     /// <param name="title">The title bar's text.</param>
     /// <param name="width">The width of the client area, in logical pixels.</param>
     /// <param name="height">The height of the client area, in logical pixels.</param>
-    /// <param name="show"><see langword="true"/> to show the window before its renderer is made.</param>
     /// <returns>The window; the core disposes it.</returns>
     /// <remarks>
     /// A window counts as open until it is disposed, not until it closes: the loop's one frame clock comes back to the host when the
@@ -64,7 +63,7 @@ internal interface IPlatformApp : IDisposable
     /// <exception cref="InvalidOperationException">The calling thread is not the UI thread, or a window of the host is open: a second
     /// window comes with row MW1.</exception>
     [UiThreadOnly]
-    IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height, bool show);
+    IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height);
 
     /// <summary>
     /// Handles the OS's messages, drains <see cref="Dispatcher"/>, and runs the frames, until <see cref="Quit"/> is called.

@@ -1539,6 +1539,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
 
         public void RootMounted() { }
 
+        public void Show() { }
+
         public void RequestClose() { }
 
         public void SetDarkTitleBar(bool dark) => TitleBars.Add(dark);
