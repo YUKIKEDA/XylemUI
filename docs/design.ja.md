@@ -3757,13 +3757,145 @@ public static partial class Localization
 }
 ```
 
-**メッセージの辞書:**
+**メッセージの辞書（行 LC3。Issue #910 の Grill の 6 巡目と、Issue #982 の Grill の 4 巡でオーナーが決定）:**
 
-- **入力:** ARB（JSON）。ロケールごとに 1 ファイルで、メッセージごとに `@キー` の欄へ説明と差し込みの型を書く。Flutter の `gen-l10n` と同じ形式なので、ARB を読む翻訳ツールをそのまま使える。ただし、メッセージの意味は ICU MessageFormat 1 に合わせるので、`=0`・`=1`・`=2` と、`'` のエスケープでは、同じ ARB が Flutter と違う結果になる場合がある（下の「構文」。Grill の 6 巡目でオーナーが決定、Issue #910）。
-- **構文:** ICU MessageFormat 1 の範囲。名前付きの差し込み、`plural`、`select`、`selectordinal`、数値と日付の型付きの差し込みを持つ。Flutter の範囲（`packages/flutter_tools/lib/src/localizations/message_parser.dart` 19〜20 行目の `plural` と `select`）に、序数の `selectordinal` を足した。CLDR が序数の規則も持ち、複数形と同じ表から出せるためである。構文の意味は ICU MessageFormat 1 に合わせ、Flutter に無い `plural` の中の `#`、`offset:n`、任意の数の `=N`（区分より先に完全一致で見る。Flutter は `=0`・`=1`・`=2` だけを受け、区分の `zero`・`one`・`two` に読み替える。同じフォルダの `gen_l10n.dart` 249〜259 行目）も受け、エスケープは ICU の標準の apostrophe の規則にする（Grill の 6 巡目でオーナーが決定、Issue #910）。細部は行 LC3 の設計で、ICU User Guide を読んでから書く。
-- **生成:** `XylemUI.Generators` の Source Generator が、ビルド時に ARB を読み、メッセージごとに C# のメソッドを生成する。差し込みはメソッドの引数になる。実行時には構文を解釈しない。リフレクションも使わない（§0.1）。
-- **食い違い:** 差し込みの名前か型がロケールの間で食い違うとき、構文が誤っているときは、ビルドのエラーにする。
-- **翻訳漏れ:** あるロケールにメッセージが無いときは、基準のロケール（アプリが宣言する）の文に落とし、ビルドの警告にする。Flutter も基準のロケールの文でメソッドを生成し、漏れを数えて報告する（`packages/flutter_tools/lib/src/localizations/gen_l10n.dart` 1033〜1038 行目）。このリポジトリは警告をエラーにするので（`engineering` の規則）、フレームワーク自身の翻訳では漏れがビルドを止める。
+- **入力:** ARB（JSON）。ロケールごとに 1 ファイルで、メッセージごとに `@キー` の欄へ説明と差し込みの型を書く。Flutter の `gen-l10n` と同じ形式なので、ARB を読む翻訳ツールをそのまま使える。ただし、メッセージの意味は ICU MessageFormat 1 に合わせるので、`=0`・`=1`・`=2` と、`'` のエスケープでは、同じ ARB が Flutter と違う結果になる場合がある（下の「構文」。Issue #910 の Grill でオーナーが決定）。
+- **生成:** `XylemUI.Generators` の Source Generator が、ビルド時に ARB を読み、メッセージごとに C# のメンバーを生成する。差し込みはメソッドの引数になる。実行時には構文を解釈しない。リフレクションも使わない（§0.1）。
+- **ARB を読む所（Issue #982 の Grill でオーナーが決定）:** ARB の JSON は、生成器の中の小さな読み手で読む。依存は足さない。
+
+**宣言とロケール:**
+
+- **宣言（Issue #910 の Grill でオーナーが決定）:** 辞書はアセンブリの属性で宣言する（`[assembly: Messages("AppStrings", Template = "en")]`）。1 つ目の引数が生成するクラスの名前、`Template` が雛形のロケールである。KM1a の生成器（§7 の「動作」）と同じく属性を読む。1 つのアセンブリに辞書を複数置ける。
+- **ARB の置き場所（Issue #982 の Grill でオーナーが決定）:** 属性の `Directory` でフォルダを指す（`[assembly: Messages("AppStrings", Template = "en", Directory = "l10n")]`）。そのフォルダにある AdditionalFiles の `*.arb` を、その辞書の ARB とする。Flutter の `arb-dir` と同じ形である。
+- **ARB のロケール（Issue #910 の Grill でオーナーが決定）:** `@@locale` から取り、無ければファイル名の後ろ（`app_zh_TW.arb` の `zh_TW`）から取る。`_` は `-` に直してから `Locale.Parse` に渡す。両方あって食い違えばエラーにする。地域か文字体系を持つファイル（`app_zh_TW.arb`）には、同じ言語だけのファイル（`app_zh.arb`）が要り、無ければエラーにする。Flutter と同じ規則である。廃止されたコードの読み替え（上の「廃止されたコードの読み替え」。`iw` は `he`）は、ARB のロケールにも効く。
+- **ARB のロケールと `CldrLocales`（Issue #982 の Grill でオーナーが決定）:** ARB のロケールは、LC2 と同じ解決で `CldrLocales` のロケールに当てる。`tools/CldrTableGen` は、複数形の区分（下の「診断」の「区分の一覧」）と一緒に、CLDR のロケールの組と、文字体系を補う表（likelySubtags。上の「推定の手順」）も `XylemUI.Generators` に書く。生成器はこの表で、`Localization.Resolve` と同じ手順で当てる。`zh_TW` は `CldrLocales.ZhHant` になる。当てられなければ「CLDR に無いロケール」の警告にする。
+- **独自の属性（Issue #910 の Grill でオーナーが決定）:** わざと英語に落とすメッセージは、その言語の ARB に `"@@x-xylem-untranslated": ["key", ...]` と書く。下の「翻訳漏れ」の警告から外れる。ARB の仕様は、独自の大域の属性を `@@x-` で書くことを認める（仕様の例は `@@x-version`。Issue #982 の Grill で確かめた）。
+- **対応するロケールの一覧（Issue #982 の Grill でオーナーが決定）:** 生成器は、辞書の ARB のロケールから、対応するロケールの一覧 `AppStrings.SupportedLocales`（`CldrLocales.X` の並び）を生成する。アプリはこれを `WindowOptions.SupportedLocales`（上の「宣言する所」）に渡す。Flutter の `AppLocalizations.supportedLocales` と同じ形である。生成器が警告にするのは、ARB にあって CLDR の表の組（下の「ロケールの組」）に当てられないロケール（上の「ARB のロケールと `CldrLocales`」）だけである。Issue #910 で決めた「`SupportedLocales` に並べた `LocaleData` と食い違えば警告する」は、この決定で改めた。
+
+**構文（Issue #910 の Grill でオーナーが決定）:**
+
+ICU MessageFormat 1 の範囲で、意味も ICU に合わせる。名前付きの差し込み（`{name}`）、`plural`、`select`、`selectordinal` を持つ。Flutter の範囲（`packages/flutter_tools/lib/src/localizations/message_parser.dart` 19〜20 行目の `plural` と `select`）に、序数の `selectordinal` を足した。CLDR が序数の規則も持ち、複数形と同じ表から出せるためである。細部は、ICU User Guide の「Formatting Messages」（https://unicode-org.github.io/icu/userguide/format_parse/messages/ ）と、そこが構文の正本とする ICU4J の API の文書（ICU4J 79 の `PluralFormat`、`MessageFormat`、`MessagePattern`、`MessagePattern.ApostropheMode`。https://unicode-org.github.io/icu-docs/apidoc/released/icu4j/com/ibm/icu/text/ の下）を読んで決めた。User Guide の頁は `#` と `offset:` の意味と、`=N` と区分のどちらを先に見るかを書いていない。そこで、この 3 つは `PluralFormat` の文書から引く。
+
+- **`=N`:** 任意の数を書ける。区分より先に、値と完全に一致するかで見る。`PluralFormat` の文書は "When formatting, the input number is first matched against the explicitValue clauses." と書き、続けて "If there is no exact-number match, then a keyword is selected by calling the `PluralRules` with the input number minus the offset." と書く。構文は `explicitValue = '=' number  // adjacent, no white space in between` である。Flutter は `=0`・`=1`・`=2` だけを受け、区分の `zero`・`one`・`two` に読み替える（同じフォルダの `gen_l10n.dart` 249〜259 行目）。この形は採らない（Issue #910 の Grill でオーナーが決定）。
+- **`offset:n`:** 受ける。構文は `pluralStyle = [offsetValue] (selector '{' message '}')+`、`offsetValue = "offset:" number` である。区分は、値から `n` を引いた数で選ぶ（上の引用の "minus the offset"）。`=N` は、引く前の値と比べる。上の引用は、`=N` との照合を "the input number" とし、引くのは区分を選ぶ時だけと書く。
+- **`#`:** `plural` と `selectordinal` の文の中の `#` は、値から `offset:` の数を引いた数に置き換わる。`PluralFormat` の文書は "An unquoted pound sign (`#`) in the selected sub-message itself (i.e., outside of arguments nested in the sub-message) is replaced by the input number minus the offset." と書く。数はロケールの小数の書式（`LocaleData.DecimalFormat`、下の「確保する所」）で出す。同じ文書は "The number-minus-offset value is formatted using a `NumberFormat` for the `PluralFormat`'s locale." と書く。`plural` の中で差し込みとして書いた `{count}` は、引く前の値を出す。同じ文書は "That argument is formatting without subtracting the offset!" と書く。
+  - **入れ子の `select` の中の `#`:** 置き換えず、`#` の文字のまま出す。上の引用の "outside of arguments nested in the sub-message" のとおりである。`MessagePattern` の文書も "The REPLACE_NUMBER Part can occur only in an immediate sub-message of the pluralStyle." と書く。`plural` の中に `select` を入れた文で数を出すには、`#` でなく `{count}` を書く。User Guide は、`select` を外に置き、`plural` を中に入れる形を勧める（"and nest the plural arguments (hopefully at most one) inside."）。
+  - **書式を書かない差し込み:** `plural` の値を `{count}` と書き、ARB の `format` を書かなければ、`#` と同じロケールの小数の書式で出す。
+- **書式の指定（Issue #982 の Grill でオーナーが決定）:** 数値と日付の差し込みの書式は、ARB の `@キー` の `placeholders` に書く Flutter のメタデータ（`format` と `optionalParameters`）だけで決める（下の「数値の書式」と「日付の書式」）。文の中に ICU の書式を書く形（`{n, number, percent}`、`{d, date, short}`）はエラーにする。`plural`・`select`・`selectordinal` のほかの語（`choice`、`number`、`date`、`time`、`spellout`、`ordinal`、`duration` など）は、どれも未知の語としてエラーにする（Issue #910 の Grill でオーナーが決定）。ICU の `MessageFormat` の文書も "The `choice` argument type is deprecated." と書く。
+- **エスケープ（Issue #982 の Grill でオーナーが決定）:** ICU の標準の規則（`MessagePattern.ApostropheMode` の `DOUBLE_OPTIONAL`）にする。1 つの `'` が引用を始めるのは、`{`・`}` の前と、`plural`・`selectordinal` のすぐ中の `#` の前だけである。
+  - **`''`:** いつも 1 つの `'` になる。引用の中でも外でも同じである。`ApostropheMode` の文書は "A pair of adjacent apostrophes always results in a single apostrophe in the output." と書く。
+  - **引用が始まる所:** 1 つの `'` は、すぐ後ろが構文の文字の時だけ引用を始める。`DOUBLE_OPTIONAL` の文書は、その文字を "a curly brace {}"、"a pipe symbol | if inside a choice format"、"a pound symbol # if inside a plural format" と挙げる。User Guide は "an ASCII apostrophe only starts quoted text if it immediately precedes a character that requires quoting" と書き、入れ子の文でも外と同じに働くと書く。XylemUI は `choice` を受けないので、`'|` は引用を始めない。`'#` が引用を始めるのは、`plural` と `selectordinal` のすぐ中の文だけである（`MessageFormat` の文書の "plus the '#' sign in a messageText immediately inside a pluralStyle"）。入れ子の `select` の中では `#` は構文の文字でないので、`'#` は `'` と `#` の 2 文字になる。
+  - **ほかの `'`:** 文字の `'` のままである（`don't` は `don't`）。引用は次の 1 つの `'` で終わる（`'{name}'` は `{name}` の文字）。
+  - **縦棒の前の `'`:** ただの文字である。XylemUI は `choice` を受けないためである。Issue #910 の決定の「`'` は `{`・`}`・`#`・縦棒の前でだけ引用を始める」は、この決定で改めた（Issue #982 の Grill でオーナーが決定）。
+  - **閉じない引用:** `'{` の後ろに `'` が無い文は、書き間違いとしてビルドのエラーにする。ICU は文の終わりまでを引用と読むが、この形は採らない（Issue #982 の Grill でオーナーが決定）。
+
+**差し込みの型（Issue #910 の Grill でオーナーが決定）:**
+
+- **型の名前:** ARB の `type` は、Dart の名前と C# の名前の両方を、次の対応表で受ける。表に無い名前はエラーにする（対応表は Issue #982 の Grill でオーナーが決定）。
+
+  | ARB の `type` | C# の型 |
+  | --- | --- |
+  | Dart の `int`、C# の `int`・`long` | `long` |
+  | `double` | `double` |
+  | Dart の `num`、C# の `decimal` | `decimal` |
+  | `String`、`string` | `string` |
+  | `DateTime`（Dart と C#） | `DateTime` |
+  | `DateOnly` | `DateOnly` |
+  | `TimeOnly` | `TimeOnly` |
+  | `DateTimeOffset` | `DateTimeOffset` |
+
+- **`plural` と `selectordinal`:** `plural` を動かせるのは、整数の型と `decimal` である。`selectordinal` は整数の型だけである（Issue #982 の Grill でオーナーが決定）。`decimal` を受けるのは、見える小数の桁を保つためである。英語の `1` と `1.0` は区分が違う（下の「複数形」の「数の渡し方」）。区分は、`PluralRules.Select` と `SelectOrdinal`（下の「複数形」）で選ぶ。`SelectOrdinal` は `long` だけを受ける。Flutter は `plural` に `num` と `int` を受ける（`gen_l10n_types.dart` 591〜596 行目）。
+- **型を書かない差し込み:** `plural` に使えば `long`、`select` に使えば `string` と推す。ほかはエラーにする。`object` は箱に入れるので使わない。Flutter は、型の無い差し込みを `plural` なら `num`、`select` なら `String`、ほかは `Object` にする（同じファイルの 591〜612 行目）。
+- **テンプレートの差し込みを使わない訳:** 許す。
+
+**数値の書式（Issue #982 の Grill でオーナーが決定）:**
+
+差し込みの型が数で、`format` を書いた時は、その名前で `NumberFormatter`（下の「数値」）を作る。Flutter が受ける名前は 11 個である（Flutter 3.47.8 の `packages/flutter_tools/lib/src/localizations/gen_l10n_types.dart` 93〜105 行目の `_validNumberFormats`）。`optionalParameters` を受けるのはそのうち 8 個である（同じファイルの 119〜128 行目）。各名前の引数（`decimalDigits`、`name`、`symbol`、`customPattern`）は、`intl` の `NumberFormat` の引数で、`intl` は `.repos` に無いので読んでいない。下の表の「引数」の列は、実装の前に `intl` 0.20.3 の `number_format.dart` を読んで確かめる。
+
+| Flutter の `format` | XylemUI | 引数 |
+| --- | --- | --- |
+| `decimalPattern` | `NumberFormatter.Decimal(locale)` | なし |
+| `decimalPatternDigits` | `NumberFormatter.Decimal(locale, options)` | `decimalDigits` を `MinimumFractionDigits` と `MaximumFractionDigits` にする |
+| `percentPattern` | `NumberFormatter.Percent(locale)` | なし |
+| `decimalPercentPattern` | `NumberFormatter.Percent(locale, options)` | `decimalDigits` を同じく 2 つの桁にする |
+| `currency` | `NumberFormatter.Currency(locale, isoCode, options)` | `name` を `isoCode`、`decimalDigits` を 2 つの桁にする。`symbol` と `customPattern` はエラー |
+| `simpleCurrency` | `NumberFormatter.Currency(locale, isoCode, options)` に `NarrowCurrencySymbol = true` を渡す | `name`、`decimalDigits` |
+| `compact` | `NumberFormatter.Compact(locale, CompactStyle.Short)` | なし |
+| `compactLong` | `NumberFormatter.Compact(locale, CompactStyle.Long)` | なし |
+| `compactCurrency` | エラー（XylemUI に対応する書式が無い） | |
+| `compactSimpleCurrency` | エラー（同じ） | |
+| `scientificPattern` | エラー（同じ） | |
+
+`NumberFormatter` に対応の無い書式（`compactCurrency`・`compactSimpleCurrency`・`scientificPattern` と、`currency` の `symbol`・`customPattern`）は、名前を挙げてビルドのエラーにする。黙ってほかの書式に落とさない。要ると分かったら、ロードマップの名前のある行で足す。`simpleCurrency` は、`Currency` の狭い記号に当てる（どちらも Issue #982 の Grill でオーナーが決定）。
+
+未決: `currency` と `simpleCurrency` で `name` を書かない時（`intl` はロケールの既定の通貨を使う。XylemUI の表はロケールの既定の通貨を持たない）をエラーにするか。表に無い `optionalParameters` の名前をエラーにするか。
+
+**日付の書式（Issue #982 の Grill でオーナーが決定）:**
+
+差し込みの型が日付か時刻で、`format` を書いた時は、`DateFormatter.FromSkeleton`（下の「日付と時刻」）で作る。受ける名前は Flutter の 41 個（`gen_l10n_types.dart` 31〜73 行目の `validDateFormats`）で、下の「日付と時刻」の「スケルトン」と同じである。
+
+- **`+` の連結（Issue #982 の Grill でオーナーが決定）:** Flutter と同じく、`format` に `+` でつないだ名前（`yMd+jm`。同じファイルの 75 行目の `_dateFormatPartsDelimiter` と 258〜260 行目）を受け、`DateFormatter.FromSkeletons` に当てる。
+- **12 時間と 24 時間（同じ決定）:** `j` を含むスケルトン（`jm` など）の 12 時間と 24 時間は、窓の `Localization.Use24HourFormat` から取る。
+- **`isCustomDateFormat`（同じ決定）:** Flutter の `isCustomDateFormat`（同じファイルの 238 行目。任意のパターンを書く）はエラーにする。
+- 未決: 型が日付で `format` を書かない差し込みの扱い（Flutter は日付の書式を要るものとする。同じファイルの 566〜569 行目）。
+
+**生成する API:**
+
+- **クラスの形（Issue #982 の Grill でオーナーが決定）:** Flutter と同じ形にする。抽象の基底クラス（属性の名前。例えば `AppStrings`）に、引数の無い文を `virtual` のプロパティ、引数のある文を `virtual` のメソッドとして置き、ロケールごとに子クラスを生成する。地域や文字体系のロケールの子クラスは、言語のロケールの子クラスを継ぐ（`zh-Hant` は `zh` を継ぐ。下の「子クラスの継ぎ方」）。行 LC4 の部品の文言の上書き（下の「部品の文言」の「差し替え」）は、この基底を継いで行う。Flutter の生成したコードの形は、`packages/flutter_tools/lib/src/localizations/gen_l10n_templates.dart` で確かめた（Issue #982 の Grill）。
+- **ロケールごとのオブジェクトと `Use()`（Issue #910 の Grill でオーナーが決定）:** ロケールごとのオブジェクトは不変である。`AppStrings.Use()` が、解決したロケールのオブジェクトをシグナルで返す（Flutter の `AppLocalizations.of(context)` に当たる）。差し込みのあるメッセージには、`ref NodeTextWriter` に書く版も生成する（§2.13。フレームの経路で文字列を作らないため）。
+- **名前（Issue #982 の Grill でオーナーが決定）:** ARB の鍵は PascalCase にしてメンバーの名前にする（`itemCount` は `ItemCount`）。変えた名前がぶつかれば（`itemCount` と `ItemCount`）エラーにする。
+- **辞書に無いロケール（Issue #910 の Grill でオーナーが決定し、Issue #982 の Grill で保った）:** 投げずに雛形のロケールに落とす。Flutter の `lookupAppLocalizations` は `FlutterError` を投げるが、XylemUI は投げない。
+- **束を探す順（Issue #910 の Grill でオーナーが決定）:** 解決したロケールに likelySubtags で文字体系を補い（上の「推定の手順」）、そのロケールから、地域、文字体系、言語、雛形の順に束を探す。
+- **基底のメンバーの本体（Issue #982 の Grill でオーナーが決定）:** 基底の `virtual` のメンバーは、雛形の言語（`Template`）の文を返す。ロケールごとの子クラスは、訳した文だけを上書きする。訳し漏れたメッセージは、上書きが無いので、継いだ言語の訳、それも無ければ雛形の文になる（下の「翻訳漏れ」と合う）。行 LC4 のアプリは、部品の文言の一部だけを上書きできる。Flutter の基底は本体の無い抽象のメンバーだが、LC4 の上書きのためにこの形にする。
+- **子クラスの継ぎ方（Issue #982 の Grill でオーナーが決定）:** 地域や文字体系のロケール（`zh-Hant`・`pt-PT`）の子クラスは、言語のロケール（`zh`・`pt`）の子クラスを継ぎ、そのロケールにある文だけを上書きする。言語のロケールの子クラスは基底を継ぐ。訳し漏れは、言語の訳、雛形の文の順に落ち、上の「束を探す順」の地域・文字体系・言語・雛形と同じになる。言語の子クラスは継がれるので `sealed` にせず、継がれないロケールの子クラスだけを `sealed` にする。Flutter 3.47.8 の gen-l10n も、地域や文字体系の子クラスが言語のクラスを継ぐ（`packages/flutter_tools/lib/src/localizations/gen_l10n_templates.dart` の `subclassTemplate` の `extends @(baseLanguageClassName)`、`gen_l10n.dart` 1065〜1085 行目）
+- 未決: 生成するクラスの名前空間、生成するファイルの名前、ロケールごとの子クラスの名前、`ref NodeTextWriter` に書く版のメソッドの名前。
+- 未決: LC4 の上書きのクラスが文字列の版だけを上書きした時に、書き手に書く版をどうするか（両方の上書きを求めるか、書き手の版が文字列の版を呼ぶか）。
+
+公開の形の例（名前空間、子クラスと書き手の版の名前は未決）:
+
+```csharp
+// アプリが書く
+[assembly: Messages("AppStrings", Template = "en", Directory = "l10n")]
+
+// 生成する
+public abstract partial class AppStrings
+{
+    // ARB のロケールの表（CldrLocales.X の並び）。WindowOptions.SupportedLocales に渡す
+    public static IReadOnlyList<LocaleData> SupportedLocales { get; }
+
+    // 解決したロケールのオブジェクト。辞書に無いロケールは雛形に落とす
+    public static IReadOnlySignal<AppStrings> Use();
+
+    public virtual string Title { get; }                                   // 引数の無い文。本体は雛形の文
+    public virtual string ItemCount(long count);                           // 引数のある文
+    public virtual void ItemCount(ref NodeTextWriter writer, long count);  // 書き手に書く版
+}
+
+internal sealed class AppStringsJa : AppStrings { /* 訳した文だけを override */ }
+```
+
+**アセンブリをまたぐ辞書（Issue #910 の Grill でオーナーが決定）:**
+
+Primitives の英語の辞書と、行 LC4 の翻訳のパッケージは、モジュールの初期化子での登録でつなぐ。KM2a のキーの既定と同じ形である（ホストの登録とテーマの登録も同じ形。§6.0 と §13.2）。アプリの生成器は、アプリが宣言したロケールの分だけを登録する。宣言しないロケールの訳は、参照されないので NativeAOT が落とす。行 LC2 の表と同じ形である（下の「宣言と参照」）。
+
+**診断（Issue #910 の Grill でオーナーが決定）:**
+
+- **エラー:** 差し込みの名前か型がロケールの間で食い違う時、構文が誤っている時、上の各節でエラーと書いた時である。
+- **警告:** 「ロケールが持たない複数形の区分を書いた」（英語の `few`）、「ロケールが要る区分が無い」（ポーランド語の `few`）、「雛形に無いメッセージが訳にある」の 3 つと、下の「翻訳漏れ」と、上の「ARB にあって CLDR に無いロケール」である。Flutter は前の 3 つを調べない。
+- **項目と番号:** Issue #910 の Grill の準備で挙げた 16 項目を採る。番号は、行 PL1 の XYLEM008・009 と行 TH1 の XYLEM010・011 の後の XYLEM012 から振る（§2.2 の「診断の番号」）。未決: 16 項目の一覧と番号。実装の PR が一覧にする。
+- **区分の一覧（Issue #982 の Grill でオーナーが決定）:** 上の区分の警告のために、ロケールごとの複数形と序数の区分の一覧を、`tools/CldrTableGen` が `XylemUI.Generators` にも書く。書いたファイルはコミットする。テストで、Core の `PluralRules` が返しうる区分と一致することを確かめる（下の「複数形」の「LC3 との関係」）。
+
+**翻訳漏れ:**
+
+あるロケールにメッセージが無い時は、そのロケールの子クラスがメンバーを上書きしないので、継いだ言語の子クラスの訳、それも無ければ基底の雛形の文になる（上の「基底のメンバーの本体」と「子クラスの継ぎ方」）。生成器はこれをビルドの警告にする。Flutter も雛形の文でメソッドを生成し、漏れを数えて報告する（`packages/flutter_tools/lib/src/localizations/gen_l10n.dart` 1033〜1038 行目）。このリポジトリは警告をエラーにするので（`engineering` の規則）、フレームワーク自身の翻訳では漏れがビルドを止める。わざと英語に落とすメッセージは、上の `@@x-xylem-untranslated` に書けば警告にしない（Issue #910 の Grill でオーナーが決定）。G1 の一覧は、生成したコード（`PrimitiveStrings.UntranslatedFor(Locale)`）から読む（下の「部品の文言」）。
+
+**決める前に測ること（Issue #910 の Grill でオーナーが決定）:**
+
+上の「生成する API」と「アセンブリをまたぐ辞書」は、決める前に次の 3 つを測って確かめ、数を設計の PR に書く。1 と 2 は生成する API の形を、3 はアセンブリをまたぐ登録を確かめる。
+
+1. **ロケールの切り替え:** 訳した文字が 1,000 個あるロケールを切り替えたフレーム。
+2. **複数形の文字の割り当て:** 毎フレーム変わる複数形の文字の割り当てを、文字列を返す形と書き手に書く形で比べる。
+3. **アセンブリをまたぐ辞書の大きさ:** 116 ロケールすべてを登録した時と、宣言したロケールだけを登録した時で、NativeAOT の実行ファイルの大きさを比べる。訳のデータには、Flutter の material の 150 メッセージを代わりに使う。
 
 **書式（数値と日付）:**
 
@@ -3836,7 +3968,7 @@ public static partial class Localization
 
 - **区分:** `PluralCategory`（`Zero`・`One`・`Two`・`Few`・`Many`・`Other`）。複数形（cardinal）と序数（ordinal）の 2 つの規則を、ロケールごとに持つ。規則に無い区分は返さない。
 - **数の渡し方:** 規則は、数の絶対値（`n`）、整数の部分（`i`）、見える小数の桁の数（`v`、`w`）と値（`f`、`t`）、短縮の指数（`c`）で決まる（UTS #35 第 3 部（CLDR 49 の版）の「Plural Operand Meanings」の表）。見える小数の桁で区分が変わる（英語の `1` は `one`、`1.0` は `other`）ので、小数は `decimal` で受け、`decimal` の桁（`1.0m` の 1 桁）を見える桁にする。`double` は受けない。見える桁が決まらないからである。書式で桁を決めた数は、その書式の `Round` を通してから渡す。短縮の書式は、区分を選ぶ時に短縮の指数を 0 にする（下の「短縮のパターンの選び方」）。
-- **LC3 との関係:** LC3 の生成器は、`plural` と `selectordinal` の区分を、生成したメソッドの中でこの `PluralRules` で選ぶ。ロケールがどの区分を使うかの一覧をビルド時に知る必要があれば（使われない区分の警告など）、`tools/CldrTableGen` が生成器に一覧を書き出す。一覧が要るかは、行 LC3 の Grill で決める。
+- **LC3 との関係:** LC3 の生成器は、`plural` と `selectordinal` の区分を、生成したメソッドの中でこの `PluralRules` で選ぶ。ロケールがどの区分を使うかの一覧は、`tools/CldrTableGen` が `XylemUI.Generators` にも書き、生成器が区分の警告に使う。書いたファイルはコミットし、Core の `PluralRules` と一致することをテストで確かめる（Issue #982 の Grill でオーナーが決定。上の「メッセージの辞書」の「診断」）。
 
 **数値:**
 
@@ -4142,7 +4274,10 @@ public sealed class DateNames
 - **本体:** `XylemUI.Primitives` の部品は、英語の文言だけを持ち、アプリの文言と同じ辞書の仕組みから読む。C# やテーマに英語を直に書かない。Avalonia は 3 通りが混ざっている（リソースのキー: `src/Avalonia.Themes.Fluent/Strings/InvariantResources.xaml` 13〜15 行目、C# の直書き: `src/Avalonia.Controls/ToggleSwitch.cs` 57 行目の `"Off"`、.NET のカルチャ）。
 - **翻訳:** 別のパッケージに、Flutter と同じ 82 言語を持つ（`packages/flutter_localizations/lib/src/l10n/` の `material_*.arb` は 116 ファイル）。Flutter に同じ意味のメッセージがあるもの（切り取り、コピー、貼り付け、OK、キャンセルなど）は、Flutter の ARB の訳を、BSD 3 条項の表示を付けて使う。
 - **Flutter に対応する文が無いメッセージ:** 英語と日本語だけを持ち、ほかの言語は英語に落とす。82 言語の訳を確かめられる人がいないためである。どのメッセージがどの言語で英語に落ちるかの一覧を、Gallery（G1）で見せる。
-- **差し替え:** アプリは、部品の文言を上書きできる。生成した部品の文言の基底を継いだクラスを、部品が文言を読む Context の鍵（`PrimitiveStrings`）で渡す形にする（Flutter の形。メッセージごとの上書きと、実行時に文字列のキーで引く形は採らない。Grill の 6 巡目でオーナーが決定、Issue #910）。
+- **読み方（Issue #910 の Grill でオーナーが決定）:** 部品は文言を、フレームワークの Context の鍵（`PrimitiveStrings`）から、アプリの文言と同じ形（ロケールごとの不変のオブジェクトをシグナルで返す。上の「メッセージの辞書」の「生成する API」）で読む。部分木ごとに替えられる。
+- **つなぎ方（同じ決定）:** Primitives の英語の辞書と翻訳のパッケージは、行 LC3 のモジュールの初期化子での登録でつなぐ（上の「アセンブリをまたぐ辞書」）。アプリが宣言したロケールの訳だけが実行ファイルに残る。
+- **英語に落とすメッセージ（同じ決定）:** 翻訳のパッケージの ARB に `@@x-xylem-untranslated` で書く（上の「独自の属性」）。G1 は、一覧を生成したコードの `PrimitiveStrings.UntranslatedFor(Locale)` から読む。
+- **差し替え:** アプリは、部品の文言を上書きできる。生成した部品の文言の基底を継いだクラスを、部品が文言を読む Context の鍵（`PrimitiveStrings`）で渡す形にする（Flutter の形。メッセージごとの上書きと、実行時に文字列のキーで引く形は採らない。Issue #910 の Grill でオーナーが決定）。基底は、上の「生成する API」の抽象の基底クラスで、文は雛形の文を返す `virtual` のメンバーである。アプリは、変えたい文だけを上書きすればよい（Issue #982 の Grill でオーナーが決定。上の「基底のメンバーの本体」）。
 
 ---
 
