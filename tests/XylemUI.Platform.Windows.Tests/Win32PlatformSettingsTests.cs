@@ -5,8 +5,9 @@ namespace XylemUI.Platform.Windows.Tests;
 
 // The OS's settings of the Windows host (row PL1, design §6.0, "OS settings"): one object of the app tier, read again on the setting
 // messages of the host's windows, which tells each reading that changed values once, marked with them, and after a synchronous render
-// when the reading came during one; a reading that throws keeps every value, and one off the UI thread throws. No test changes a
-// setting of Windows: the readers stand for them.
+// when the reading came during one; a reading that throws keeps every value, and one off the UI thread throws. The OS's appearance
+// (row TH1) is read again on the three messages of a change of Windows' appearance, and told once. No test changes a setting of
+// Windows: the readers stand for them.
 [Collection(UiThreadGroup.Name)]
 public sealed class Win32PlatformSettingsTests(UiThreadFixture ui)
 {
@@ -187,6 +188,110 @@ public sealed class Win32PlatformSettingsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// The OS's appearance is told only when a reading finds another value (design §13.2, "同じ値はまとめる"): readings that find
+    /// the value before tell nothing, and the several readings one change of Windows makes tell it once.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An appearance reader set by the test, put back after it, that returns light. Settings made with it, and a handler that
+    ///   records the settings' notices.
+    ///
+    /// Steps:
+    /// - Read again twice. Make the reader return dark with the accent #0078D4, and read again three times.
+    ///
+    /// Expected:
+    /// - One notice, marked with the appearance only, after the first dark reading; the settings hold the dark appearance.
+    /// </remarks>
+    [Fact]
+    public void ReadAgain_TheSameAppearance_TellsNothing_AnotherTellsOnce() =>
+        ui.Invoke(() =>
+        {
+            Func<SystemAppearance, SystemAppearance> previous = Win32PlatformSettings.AppearanceReader;
+            try
+            {
+                SystemAppearance current = default;
+                Win32PlatformSettings.AppearanceReader = _ => current;
+                var settings = new Win32PlatformSettings();
+                var notices = new List<PlatformSettingsChanges>();
+                settings.Changed += notices.Add;
+                var dark = new SystemAppearance(ColorScheme.Dark, false, Color.FromRgb(0x0078D4), null);
+
+                settings.ReadAgain();
+                settings.ReadAgain();
+                int afterSame = notices.Count;
+                current = dark;
+                settings.ReadAgain();
+                settings.ReadAgain();
+                settings.ReadAgain();
+
+                Assert.Equal(0, afterSame);
+                Assert.Equal([PlatformSettingsChanges.Appearance], notices);
+                Assert.Equal(dark, settings.Appearance);
+            }
+            finally
+            {
+                Win32PlatformSettings.AppearanceReader = previous;
+            }
+        });
+
+    /// <summary>
+    /// Each of the three messages that come when Windows' appearance changes reads the settings again once (design §13.2, "読み直す
+    /// 時"): <c>WM_SETTINGCHANGE</c> with <c>"ImmersiveColorSet"</c> (light and dark), <c>WM_SYSCOLORCHANGE</c> (high contrast),
+    /// and <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> (the accent color); the change they read is told once.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An appearance reader set by the test, put back after it, that counts its calls and returns light. Settings made with it; a
+    ///   hidden window whose setting messages read them again; a handler that records the settings' notices.
+    ///
+    /// Steps:
+    /// - Make the reader return dark. Send <c>WM_DWMCOLORIZATIONCOLORCHANGED</c>, then <c>WM_SETTINGCHANGE</c> whose lParam is
+    ///   <c>"ImmersiveColorSet"</c>, then <c>WM_SYSCOLORCHANGE</c>, reading the count after each.
+    ///
+    /// Expected:
+    /// - The counts are 1, 2, and 3 more than at the start; one notice, marked with the appearance, and the settings hold dark.
+    /// </remarks>
+    [Fact]
+    public void AppearanceMessages_EachReadsAgainOnce_AndTheChangeIsToldOnce() =>
+        ui.Invoke(() =>
+        {
+            Func<SystemAppearance, SystemAppearance> previous = Win32PlatformSettings.AppearanceReader;
+            try
+            {
+                int reads = 0;
+                SystemAppearance current = default;
+                Win32PlatformSettings.AppearanceReader = _ =>
+                {
+                    reads++;
+                    return current;
+                };
+                var settings = new Win32PlatformSettings();
+                using var window = new Win32Window("appearance", 200, 100) { SettingsMessageReceived = settings.ReadAgain };
+                var notices = new List<PlatformSettingsChanges>();
+                settings.Changed += notices.Add;
+                var dark = new SystemAppearance(ColorScheme.Dark, false, null, null);
+                current = dark;
+                int start = reads;
+                var counts = new List<int>();
+
+                _ = SendMessageW(window.Hwnd, WM.WM_DWMCOLORIZATIONCOLORCHANGED, default, default);
+                counts.Add(reads - start);
+                SendSettingChange(window, "ImmersiveColorSet");
+                counts.Add(reads - start);
+                _ = SendMessageW(window.Hwnd, WM.WM_SYSCOLORCHANGE, default, default);
+                counts.Add(reads - start);
+
+                Assert.Equal([1, 2, 3], counts);
+                Assert.Equal([PlatformSettingsChanges.Appearance], notices);
+                Assert.Equal(dark, settings.Appearance);
+            }
+            finally
+            {
+                Win32PlatformSettings.AppearanceReader = previous;
+            }
+        });
+
+    /// <summary>
     /// A reading off the UI thread throws before it reads, also when no value changed (design §2.12).
     /// </summary>
     /// <remarks>
@@ -211,5 +316,15 @@ public sealed class Win32PlatformSettingsTests(UiThreadFixture ui)
         worker.Join();
 
         _ = Assert.IsType<InvalidOperationException>(thrown);
+    }
+
+    // Sends WM_SETTINGCHANGE with the setting's name in lParam, as Windows sends "ImmersiveColorSet": the string is pinned while
+    // the message, which runs before SendMessageW returns, reads it.
+    private static unsafe void SendSettingChange(Win32Window window, string setting)
+    {
+        fixed (char* name = setting)
+        {
+            _ = SendMessageW(window.Hwnd, WM.WM_SETTINGCHANGE, default, (nint)name);
+        }
     }
 }

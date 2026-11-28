@@ -17,7 +17,8 @@ namespace XylemUI.E2E;
 // loop's clock, and TSF), and a window core (WindowCore) connects to it, as XylemApp.OpenWindow does. The core draws on the target
 // the host gives it, which the host makes from its renderer through WrapTarget: a TimingTarget that records when Draw and Present
 // start and end (Issue #928). The window is made hidden, placed, and shown before the core connects; the host made its renderer
-// before it showed, where an app's window shows first. The plain scene (Build) stays on its own window and renderer.
+// before it showed, as for an app, whose window shows after its first frame (Issue #907). The plain scene (Build) stays on its own
+// window and renderer.
 internal sealed class Scene : IDisposable
 {
     public const string Line = "Hello, World! 日本語のテキスト";
@@ -37,7 +38,7 @@ internal sealed class Scene : IDisposable
             _text = new TextContext(new OneFont(_font));
             _app = new Win32PlatformApp { UseWarp = useWarp, WrapTarget = target => Timing = new TreeScene.TimingTarget(target) };
             Core = new WindowCore(_text, _app.Settings, _app.Clipboard, null, null);
-            HostWindow = (Win32PlatformWindow)_app.OpenWindow(Core, title, 800, 600, show: false);
+            HostWindow = (Win32PlatformWindow)_app.OpenWindow(Core, title, 800, 600);
             Window = HostWindow.Window;
             Renderer = HostWindow.Renderer;
 

@@ -436,10 +436,10 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
                 using var firstCore = new WindowCore(null, app.Settings, app.Clipboard, null, null);
                 using var secondCore = new WindowCore(null, app.Settings, app.Clipboard, null, null);
                 first = app.Fonts;
-                IPlatformWindow window = app.OpenWindow(firstCore, "first", 200, 100, show: false);
+                IPlatformWindow window = app.OpenWindow(firstCore, "first", 200, 100);
                 whileFirst = app.Fonts;
                 window.Dispose();
-                window = app.OpenWindow(secondCore, "second", 200, 100, show: false);
+                window = app.OpenWindow(secondCore, "second", 200, 100);
                 whileSecond = app.Fonts;
                 window.Dispose();
                 afterBoth = app.Fonts;

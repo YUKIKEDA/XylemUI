@@ -1,5 +1,7 @@
+using TerraFX.Interop.Windows;
 using XylemUI.Rendering.D3D11;
 using XylemUI.Text;
+using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Platform.Windows;
 
@@ -10,11 +12,11 @@ namespace XylemUI.Platform.Windows;
 /// nothing of the clock.
 /// </summary>
 /// <remarks>
-/// It belongs to the UI thread. It makes its parts in the order the design gives (window, provider, show, renderer, clock, TSF), and
+/// It belongs to the UI thread. It makes its parts in the order the design gives (window, provider, renderer, clock, TSF), and
 /// disposes them in the order the desktop window had: TSF lets go of the window before it is destroyed, the provider goes before
-/// the window, and the loop stops waiting on the clock before the renderer closes it. The window's <c>WM_SETTINGCHANGE</c> and
-/// <c>WM_SYSCOLORCHANGE</c> read the app tier's settings again (<see cref="Win32PlatformSettings"/>, design §6.0, "OS settings"),
-/// which tell the window cores themselves.
+/// the window, and the loop stops waiting on the clock before the renderer closes it. The window's <c>WM_SETTINGCHANGE</c>,
+/// <c>WM_SYSCOLORCHANGE</c>, and <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> read the app tier's settings again
+/// (<see cref="Win32PlatformSettings"/>, design §6.0, "OS settings"), which tell the window cores themselves.
 /// </remarks>
 internal sealed class Win32PlatformWindow : IPlatformWindow
 {
@@ -25,24 +27,21 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="Win32PlatformWindow"/> class: makes the window, binds its setting messages to
-    /// <paramref name="settings"/> and reads them again once, for a change no window received, makes its UIA provider, shows it when
-    /// asked to, then makes the renderer at the client size, sets the swap chain as the loop's frame clock, and makes the input
-    /// method. What was made is disposed when a later step throws.
+    /// Initializes a new instance of the <see cref="Win32PlatformWindow"/> class: makes the window, hidden, binds its setting
+    /// messages to <paramref name="settings"/> and reads them again once, for a change no window received, makes its UIA provider,
+    /// then makes the renderer at the client size, sets the swap chain as the loop's frame clock, and makes the input method. What
+    /// was made is disposed when a later step throws.
     /// </summary>
     /// <remarks>
-    /// A window that is shown is shown before the renderer is made, as the startup scene of <c>XylemUI.E2E</c> (the baseline of row
-    /// M1a), Avalonia, and GPUI show theirs. Shown after its first present, as Flutter's Windows runner does to show no empty
-    /// window, the counter's first frame reached the display 40 to 60 ms later; the renderer, whose shaders compile at run time until
-    /// row C0, takes most of the time before it (<c>docs/benchmarks/v1d-components.md</c>). The UIA provider answers the window's
-    /// <c>WM_GETOBJECT</c> from before the window shows, and the first answer makes the tree's accessibility tree (design §4.4.1).
+    /// The window shows when <see cref="Show"/> is called, after its first frame was presented, as Flutter's Windows runner shows
+    /// its window from the first frame's callback (Issue #907). The UIA provider answers the window's <c>WM_GETOBJECT</c> from
+    /// before the window shows, and the first answer makes the tree's accessibility tree (design §4.4.1).
     /// </remarks>
     /// <param name="core">The window core, whose tree the provider reads.</param>
     /// <param name="settings">The app tier's settings, which the window's setting messages read again.</param>
     /// <param name="title">The title bar's text.</param>
     /// <param name="width">The width of the client area, in logical pixels; rounded up.</param>
     /// <param name="height">The height of the client area, in logical pixels; rounded up.</param>
-    /// <param name="show"><see langword="true"/> to show the window; the tests keep it hidden.</param>
     /// <param name="useWarp"><see langword="true"/> to draw with the WARP software rasterizer, for the tests.</param>
     /// <param name="onDisposed">Called once when the window is disposed; <see langword="null"/> for nothing.</param>
     /// <param name="wrapTarget">
@@ -58,7 +57,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
         string title,
         float width,
         float height,
-        bool show,
         bool useWarp,
         Action? onDisposed = null,
         Func<IRenderTarget, IRenderTarget>? wrapTarget = null
@@ -78,11 +76,6 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
             settings.ReadAgain();
             _accessibility = new Win32Accessibility(Window, core.Tree);
             Window.Accessibility = _accessibility;
-            if (show)
-            {
-                Window.Show();
-            }
-
             (int pixelWidth, int pixelHeight) = Window.ClientSize;
             Renderer = D3D11Renderer.Create(Window.Handle, pixelWidth, pixelHeight, useWarp);
             Renderer.TextRendering = Window.TextRendering;
@@ -169,7 +162,30 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
     public void RootMounted() => _accessibility?.StartIfAsked();
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>ShowWindow</c> with <c>SW_SHOW</c>, which activates the window, as the window was shown before its renderer until Issue
+    /// #907. The notices are bound by then: the activation reaches the core's input, and a size change of the show (the first
+    /// <c>ShowWindow</c> of a process takes the show command its starter gave, maximized for one) runs the synchronous resize path.
+    /// </remarks>
+    public void Show() => Window.Show();
+
+    /// <inheritdoc/>
     public void RequestClose() => Window.RequestClose();
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Sets <c>DWMWA_USE_IMMERSIVE_DARK_MODE</c> (20), which builds from 22000 take (Microsoft's "DWMWINDOWATTRIBUTE"); spike #888
+    /// read the value back and saw the bar turn <c>#1E2024</c> on Windows 11 26300 (design §13.2, "題名の棒").
+    /// </remarks>
+    /// <exception cref="InvalidOperationException"><c>DwmSetWindowAttribute</c> failed; the result is in
+    /// <see cref="Exception.HResult"/>.</exception>
+    public unsafe void SetDarkTitleBar(bool dark)
+    {
+        // The call reads the local value, whose size it is given.
+        BOOL value = dark ? BOOL.TRUE : BOOL.FALSE;
+        int result = DwmSetWindowAttribute(Window.Hwnd, (uint)DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, &value, (uint)sizeof(BOOL));
+        Com.ThrowIfFailed(result, "DwmSetWindowAttribute");
+    }
 
     /// <summary>
     /// Takes the notices back from the core and the settings, lets TSF go of the window, takes the provider out, destroys the window,

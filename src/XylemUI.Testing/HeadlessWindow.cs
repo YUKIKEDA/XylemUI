@@ -49,6 +49,11 @@ internal sealed class HeadlessWindow(
     /// <inheritdoc/>
     public ITextInputPlatform? TextInput => ime;
 
+    /// <summary>
+    /// Gets the value the window core gave <see cref="SetDarkTitleBar"/> last; <see langword="null"/> before the first.
+    /// </summary>
+    public bool? DarkTitleBar { get; private set; }
+
     /// <inheritdoc/>
     /// <remarks>
     /// No OS sends notices: the tests call the core's input and frames through the app.
@@ -63,9 +68,22 @@ internal sealed class HeadlessWindow(
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Nothing: a headless window shows from the start (<see cref="IsShowing"/>), and the app does not open it through
+    /// <c>XylemApp.OpenWindow</c>, which calls this.
+    /// </remarks>
+    public void Show() { }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Nothing: a headless window closes when the app is disposed.
     /// </remarks>
     public void RequestClose() { }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The headless window keeps the value, which <see cref="HeadlessApp.DarkTitleBar"/> shows.
+    /// </remarks>
+    public void SetDarkTitleBar(bool dark) => DarkTitleBar = dark;
 
     /// <inheritdoc/>
     /// <remarks>

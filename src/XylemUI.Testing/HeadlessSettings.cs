@@ -3,7 +3,7 @@ namespace XylemUI.Testing;
 /// <summary>
 /// The OS's settings of a headless app (design §6.0, "Headless"): made from <see cref="HeadlessOptions"/>, so that a test does not
 /// depend on the machine it runs on, and changed by the app (<see cref="HeadlessApp.SetSystemLocales"/>,
-/// <see cref="HeadlessApp.SetUse24HourFormat"/>) as an OS's change is read. A change that makes a value differ raises
+/// <see cref="HeadlessApp.SetUse24HourFormat"/>, <see cref="HeadlessApp.SetSystemAppearance"/>) as an OS's change is read. A change that makes a value differ raises
 /// <see cref="Changed"/> once, marked with that value; one that does not raises nothing.
 /// </summary>
 /// <remarks>
@@ -38,6 +38,12 @@ internal sealed class HeadlessSettings(HeadlessOptions options) : IPlatformSetti
     /// <inheritdoc/>
     public bool Use24HourFormat { get; private set; } = options.Use24HourFormat;
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <see cref="HeadlessOptions.SystemAppearance"/> at the start, which the window core checks when it mounts the root.
+    /// </remarks>
+    public SystemAppearance Appearance { get; private set; } = options.SystemAppearance;
+
     /// <summary>
     /// Sets the OS's languages; tells the change when the list differs from the one before, in its tags or their order.
     /// </summary>
@@ -62,6 +68,22 @@ internal sealed class HeadlessSettings(HeadlessOptions options) : IPlatformSetti
         {
             Use24HourFormat = use24HourFormat;
             Changed?.Invoke(PlatformSettingsChanges.Use24HourFormat);
+        }
+    }
+
+    /// <summary>
+    /// Sets the OS's appearance; tells the change when the value differs from the one before, as the Windows host tells only a
+    /// reading that changed it (design §13.2, "同じ値はまとめる").
+    /// </summary>
+    /// <param name="value">The OS's appearance.</param>
+    /// <exception cref="ArgumentException">Only one of <see cref="SystemAppearance.HighContrast"/> and
+    /// <see cref="SystemAppearance.Contrast"/> says high contrast is on; the value before stays.</exception>
+    public void SetAppearance(SystemAppearance value)
+    {
+        if (WindowAppearance.Check(value, nameof(value)) != Appearance)
+        {
+            Appearance = value;
+            Changed?.Invoke(PlatformSettingsChanges.Appearance);
         }
     }
 }

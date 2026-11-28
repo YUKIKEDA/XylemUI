@@ -36,9 +36,6 @@ internal sealed class Win32PlatformApp : IPlatformApp
         // Checks the thread first, so that a thread that is not the UI thread throws with OLE untouched and no fonts made.
         Dispatcher = Win32MessageLoop.Dispatcher;
 
-        // Reading Windows' settings changes nothing, so it comes before what a failure would have to put back.
-        _settings = new Win32PlatformSettings();
-
         // The UI thread's one font provider (design §3.2). DirectWrite's shared factory needs no COM apartment, and a provider that
         // throws has released what it made, so it comes before OLE: a failure here leaves nothing to put back.
         _fonts = new DirectWriteFontProvider();
@@ -52,6 +49,19 @@ internal sealed class Win32PlatformApp : IPlatformApp
         }
         catch
         {
+            _fonts.Dispose();
+            throw;
+        }
+
+        // The OS's appearance activates WinRT's UISettings (design §13.2, "WinRT の呼び方"), so Windows' settings are read in the
+        // apartment OLE's initialization entered. A failure puts back OLE and the fonts, in the reverse of the order they were made.
+        try
+        {
+            _settings = new Win32PlatformSettings();
+        }
+        catch
+        {
+            Com.UninitializeUiThread();
             _fonts.Dispose();
             throw;
         }
@@ -75,7 +85,8 @@ internal sealed class Win32PlatformApp : IPlatformApp
 
     /// <inheritdoc />
     /// <remarks>
-    /// Read when the host is made, and again on each <c>WM_SETTINGCHANGE</c> and <c>WM_SYSCOLORCHANGE</c> the host's window receives.
+    /// Read when the host is made, and again on each <c>WM_SETTINGCHANGE</c>, <c>WM_SYSCOLORCHANGE</c>, and
+    /// <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> the host's window receives.
     /// </remarks>
     public IPlatformSettings Settings => _settings;
 
@@ -100,7 +111,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
     /// and the scheduler"), so a window counts as open until it is disposed, when it gives the clock back.
     /// </remarks>
     [UiThreadOnly]
-    public IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height, bool show)
+    public IPlatformWindow OpenWindow(WindowCore core, string title, float width, float height)
     {
         UiThread.VerifyAccess();
         if (_window is not null)
@@ -108,7 +119,7 @@ internal sealed class Win32PlatformApp : IPlatformApp
             throw new InvalidOperationException("A window of the app is open: a second window comes with row MW1 (design §6.0).");
         }
 
-        _window = new Win32PlatformWindow(core, _settings, title, width, height, show, UseWarp, () => _window = null, WrapTarget);
+        _window = new Win32PlatformWindow(core, _settings, title, width, height, UseWarp, () => _window = null, WrapTarget);
         return _window;
     }
 

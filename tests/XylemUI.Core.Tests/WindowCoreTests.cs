@@ -7,8 +7,9 @@ namespace XylemUI.Tests;
 // The window core (row PL1, design §6.0, "The window core"): the half of a window that a desktop window and the headless app
 // share. It connects to a window tier (IPlatformWindow) and takes its values now and the OS's settings now, the root function runs in
 // the root scope with the tree current and the locale provided, the first frame runs at the size given, the host's resize and text
-// rendering reach the frames, a notice of the app tier's settings (IPlatformSettings) reaches the tree once, and closing and disposing
-// cancel the frame, dispose the root, stop following the settings, and, for disposing, dispose the window and the atlas it owns.
+// rendering reach the frames, a notice of the app tier's settings (IPlatformSettings) reaches the tree once, what the window's surface
+// is told is painted, and closing and disposing cancel the frame, dispose the root, stop following the settings, and, for disposing,
+// dispose the window and the atlas it owns.
 [Collection(UiThreadGroup.Name)]
 public sealed class WindowCoreTests(UiThreadFixture ui)
 {
@@ -1294,6 +1295,127 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
             Assert.Equal(1, tableReads);
         });
 
+    /// <summary>
+    /// What the root wrapper tells the window's surface is painted (design §13.2, "根の箱" and "題名の棒"): the backdrop as the
+    /// color the frames draw behind the tree, from the first frame on, and the title bar through the window tier; a value equal to
+    /// the last paints nothing, and once the root is disposed nothing more is painted.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A core connected to a window whose target records the color behind the tree and whose title bar records each value it is
+    ///   given; the frames' color is gray. A root function that keeps the surface and tells it the backdrop #292929 and a dark title
+    ///   bar.
+    ///
+    /// Steps:
+    /// - Mount, and read the frames' color, the color the first frame drew with, and the title bars. Tell the surface #292929 and
+    ///   dark again; read whether a frame is pending. Tell it #FAFAFA, and run the frame; tell it a light title bar. Dispose the
+    ///   root; tell it black and dark.
+    ///
+    /// Expected:
+    /// - After the mount: #292929 and #292929; the title bars are dark.
+    /// - The same values ask for no frame and add no title bar.
+    /// - #FAFAFA asks for a frame, which draws with #FAFAFA; the title bars are dark, then light.
+    /// - After the root is disposed: the frames' color is still #FAFAFA, and the title bars are still dark, then light.
+    /// </remarks>
+    [Fact]
+    public void Surface_PaintsTheBackdropAndTheTitleBar_OnlyChangedValues_UntilTheRootIsDisposed() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            (WindowCore core, FakeWindow window) = Connected(atlas);
+            Color dark = Color.FromRgb(0x292929);
+            Color light = Color.FromRgb(0xFAFAFA);
+            WindowSurface? surface = null;
+            core.Mount(
+                () =>
+                {
+                    surface = WindowSurface.Current.Use();
+                    surface.SetBackdrop(dark);
+                    surface.SetDarkTitleBar(true);
+                    return Box();
+                },
+                null,
+                default,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+            (Color Frames, Color Drawn) mounted = (core.Frames.ClearColor, window.Target.ClearColor);
+            bool[] barsAfterMount = [.. window.TitleBars];
+
+            surface!.SetBackdrop(dark);
+            surface.SetDarkTitleBar(true);
+            bool pendingAfterSame = window.Scheduler.Pending;
+            bool[] barsAfterSame = [.. window.TitleBars];
+            surface.SetBackdrop(light);
+            bool pendingAfterLight = window.Scheduler.Pending;
+            window.Scheduler.Run();
+            Color drawnAfterLight = window.Target.ClearColor;
+            surface.SetDarkTitleBar(false);
+            core.DisposeRoot();
+            surface.SetBackdrop(Color.FromRgb(0x000000));
+            surface.SetDarkTitleBar(true);
+
+            Assert.Equal((dark, dark), mounted);
+            Assert.Equal([true], barsAfterMount);
+            Assert.False(pendingAfterSame);
+            Assert.Equal([true], barsAfterSame);
+            Assert.True(pendingAfterLight);
+            Assert.Equal(light, drawnAfterLight);
+            Assert.Equal(light, core.Frames.ClearColor);
+            Assert.Equal([true, false], window.TitleBars);
+        });
+
+    /// <summary>
+    /// A notice of the settings marked with the OS's appearance gives the tree the settings' appearance, and its readers run again
+    /// only when it changed; a notice that does not mark it changes nothing of it (design §13.2, "置き方").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Settings with the default appearance; a connected core with them, mounted with that appearance and a root function whose
+    ///   effect records the scheme.
+    ///
+    /// Steps:
+    /// - Make the settings' appearance dark and tell a notice marked with less motion only. Tell one marked with the appearance;
+    ///   tell it again. Make the appearance light and tell one marked with less motion and the appearance.
+    ///
+    /// Expected:
+    /// - The effect recorded light, dark, light: the first notice did not give the appearance, and the second dark ran nothing.
+    /// </remarks>
+    [Fact]
+    public void SettingsChanged_Appearance_GivesTheSettingsAppearanceWhenMarked() =>
+        ui.Invoke(() =>
+        {
+            using var atlas = new GlyphAtlas(new NoGlyphs());
+            var settings = new FakeSettings();
+            (WindowCore core, _) = Connected(atlas, settings);
+            var seen = new List<ColorScheme>();
+            core.Mount(
+                () =>
+                {
+                    IReadOnlySignal<SystemAppearance> appearance = SystemAppearance.Current.Use();
+                    _ = Effect.Create(() => seen.Add(appearance.Get().Scheme));
+                    return Box();
+                },
+                null,
+                settings.Appearance,
+                "WindowCoreTests",
+                new Size(200, 100),
+                1
+            );
+
+            settings.Appearance = new SystemAppearance(ColorScheme.Dark, false, null, null);
+            settings.Tell(PlatformSettingsChanges.ReducesMotion);
+            settings.Tell(PlatformSettingsChanges.Appearance);
+            settings.Tell(PlatformSettingsChanges.Appearance);
+            settings.Appearance = default;
+            settings.Tell(PlatformSettingsChanges.ReducesMotion | PlatformSettingsChanges.Appearance);
+            core.DisposeRoot();
+
+            ColorScheme[] expected = [ColorScheme.Light, ColorScheme.Dark, ColorScheme.Light];
+            Assert.Equal(expected, seen);
+        });
+
     // A core with no text, made with the settings given or settings of its own, and connected to a window that shows, whose target
     // and scheduler count. The atlas is the test's: the core is not disposed here.
     private static (WindowCore Core, FakeWindow Window) Connected(
@@ -1361,6 +1483,8 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
 
         public bool Use24HourFormat { get; set; }
 
+        public SystemAppearance Appearance { get; set; }
+
         public Exception? TextEditingError { get; set; }
 
         public Exception? UiLanguagesError { get; set; }
@@ -1409,11 +1533,17 @@ public sealed class WindowCoreTests(UiThreadFixture ui)
 
         public IPointerPlatform Pointer { get; } = new NoPlatform();
 
+        public List<bool> TitleBars { get; } = [];
+
         public void Attach() { }
 
         public void RootMounted() { }
 
+        public void Show() { }
+
         public void RequestClose() { }
+
+        public void SetDarkTitleBar(bool dark) => TitleBars.Add(dark);
 
         public void Dispose() => Disposals.Add("window");
     }

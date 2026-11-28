@@ -30,4 +30,9 @@ internal enum PlatformSettingsChanges : byte
     /// <see cref="IPlatformSettings.Use24HourFormat"/> changed.
     /// </summary>
     Use24HourFormat = 8,
+
+    /// <summary>
+    /// <see cref="IPlatformSettings.Appearance"/> changed.
+    /// </summary>
+    Appearance = 16,
 }

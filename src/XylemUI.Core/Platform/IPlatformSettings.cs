@@ -39,4 +39,10 @@ internal interface IPlatformSettings
     /// Gets a value indicating whether the OS asks for times in 24-hour form (design §4.11, "The key of the 24-hour form").
     /// </summary>
     bool Use24HourFormat { get; }
+
+    /// <summary>
+    /// Gets the OS's appearance: light or dark, high contrast and its colors, and the accent color (design §13.2, "OS の見た目"). A
+    /// host that does not read it gives the default value: light, with high contrast off and no accent color.
+    /// </summary>
+    SystemAppearance Appearance { get; }
 }
