@@ -12,5 +12,7 @@ XYLEM004 | XylemUI | Error | An action's name is empty
 XYLEM005 | XylemUI | Error | An action's type cannot be named from the table
 XYLEM006 | XylemUI | Warning | An action's property cannot be given by name
 XYLEM007 | XylemUI | Error | The class of the default key bindings has no AddDefaults method
+XYLEM008 | XylemUI | Error | The app references more than one platform host
+XYLEM009 | XylemUI | Error | The class of the platform host has no Register method
 XYLEM010 | XylemUI | Error | The app has more than one window theme
 XYLEM011 | XylemUI | Error | The class of the window theme has no Wrap method

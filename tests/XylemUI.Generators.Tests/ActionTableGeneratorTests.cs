@@ -41,6 +41,22 @@ public sealed class ActionTableGeneratorTests
 
     private const string FluentTheme = "[assembly: XylemUI.WindowTheme(typeof(XylemUI.Theme.Fluent.FluentRoot))]\n";
 
+    // A stand-in for XylemUI.Platform.Windows: a host that names its class with [assembly: PlatformHost]. The attribute is internal to
+    // XylemUI.Core, so a host here is compiled under a name Core shows its internals to, as the Windows host is.
+    private const string WindowsHost = """
+        [assembly: XylemUI.PlatformHost(typeof(XylemUI.Platform.Windows.Win32Host))]
+
+        namespace XylemUI.Platform.Windows;
+
+        public static class Win32Host
+        {
+            public static void Register() { }
+        }
+        """;
+
+    // What the module initializer calls for the host above.
+    private const string RegisterWindowsHost = "            global::XylemUI.Platform.Windows.Win32Host.Register();\n";
+
     // One language version for the sources here and the generated ones: a compilation refuses trees of two.
     private static readonly CSharpParseOptions Options = new(LanguageVersion.Preview);
 
@@ -253,7 +269,9 @@ public sealed class ActionTableGeneratorTests
     /// <remarks>
     /// Preconditions:
     /// - For each row, a library that names a class: one with no <c>AddDefaults</c>; one whose <c>AddDefaults</c> is not static;
-    ///   one whose <c>AddDefaults</c> takes no parameter; one whose <c>AddDefaults</c> takes a string; one whose <c>AddDefaults</c> is internal; an internal class. An app that
+    ///   one whose <c>AddDefaults</c> takes no parameter; one whose <c>AddDefaults</c> takes a string; one whose <c>AddDefaults</c> is internal; an internal class. A
+    ///   generic class with a valid <c>AddDefaults</c>, named open (<c>BadKeys&lt;&gt;</c>, whose method group would not compile)
+    ///   and closed (<c>BadKeys&lt;int&gt;</c>), and a class nested in a generic one (<c>Outer&lt;int&gt;.BadKeys</c>). An app that
     ///   references the library.
     ///
     /// Steps:
@@ -265,6 +283,7 @@ public sealed class ActionTableGeneratorTests
     ///   diagnostic and no source: the error is the app's.
     /// </remarks>
     /// <param name="declaration">The class the library names.</param>
+    /// <param name="named">What the library's <c>typeof</c> names.</param>
     [Theory]
     [InlineData("public static class BadKeys { }")]
     [InlineData("public sealed class BadKeys { public void AddDefaults(XylemUI.Keymap keymap) { } }")]
@@ -272,12 +291,18 @@ public sealed class ActionTableGeneratorTests
     [InlineData("public static class BadKeys { public static void AddDefaults(string keymap) { } }")]
     [InlineData("public static class BadKeys { internal static void AddDefaults(XylemUI.Keymap keymap) { } }")]
     [InlineData("internal static class BadKeys { public static void AddDefaults(XylemUI.Keymap keymap) { } }")]
-    public void DefaultKeyBindings_WithNoMethodTheAppCanCall_IsAnError(string declaration)
+    [InlineData("public static class BadKeys<T> { public static void AddDefaults(XylemUI.Keymap keymap) { } }", "BadKeys<>")]
+    [InlineData("public static class BadKeys<T> { public static void AddDefaults(XylemUI.Keymap keymap) { } }", "BadKeys<int>")]
+    [InlineData(
+        "public static class Outer<T> { public static class BadKeys { public static void AddDefaults(XylemUI.Keymap keymap) { } } }",
+        "Outer<int>.BadKeys"
+    )]
+    public void DefaultKeyBindings_WithNoMethodTheAppCanCall_IsAnError(string declaration, string named = "BadKeys")
     {
         MetadataReference library = Run(
                 "Demo.Lib",
                 OutputKind.DynamicallyLinkedLibrary,
-                "[assembly: XylemUI.DefaultKeyBindings(typeof(BadKeys))]\n" + declaration
+                "[assembly: XylemUI.DefaultKeyBindings(typeof(" + named + "))]\n" + declaration
             )
             .Emit();
 
@@ -731,8 +756,10 @@ public sealed class ActionTableGeneratorTests
     ///   <c>Func&lt;Element?&gt;</c> (a <c>Func</c> of <c>Nullable&lt;Element&gt;</c>, since <c>Element</c> is a struct); one
     ///   whose <c>Wrap</c> takes its <c>Func&lt;Element&gt;</c> by <c>ref</c>, one by <c>in</c>, and one by <c>out</c>; one whose
     ///   <c>Wrap</c> is generic; one whose <c>Wrap</c> is internal; an interface whose <c>Wrap</c> is <c>static abstract</c>, and
-    ///   one whose <c>Wrap</c> is <c>static virtual</c>. An app that references the library and carries
-    ///   <c>[assembly: XylemUI.WindowTheme(typeof(BadRoot))]</c>.
+    ///   one whose <c>Wrap</c> is <c>static virtual</c>. A generic class with a valid <c>Wrap</c>, named open
+    ///   (<c>BadRoot&lt;&gt;</c>, whose method group would not compile) and closed (<c>BadRoot&lt;int&gt;</c>), and a class nested
+    ///   in a generic one (<c>Outer&lt;int&gt;.BadRoot</c>). An app that references the library and carries
+    ///   <c>[assembly: XylemUI.WindowTheme(typeof(BadRoot))]</c>, or <c>typeof</c> of the row's generic name.
     ///
     /// Steps:
     /// - Run the generator on the app; compile the result.
@@ -743,6 +770,7 @@ public sealed class ActionTableGeneratorTests
     ///   <c>BadRoot</c>.
     /// </remarks>
     /// <param name="declaration">The class the app names.</param>
+    /// <param name="named">What the app's <c>typeof</c> names.</param>
     [Theory]
     [InlineData("public static class BadRoot { }")]
     [InlineData("public sealed class BadRoot { public XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
@@ -762,11 +790,20 @@ public sealed class ActionTableGeneratorTests
     [InlineData("public static class BadRoot { internal static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
     [InlineData("public interface BadRoot { static abstract XylemUI.Element Wrap(System.Func<XylemUI.Element> root); }")]
     [InlineData("public interface BadRoot { static virtual XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }")]
-    public void WindowTheme_WithNoWrapTheAppCanPass_IsAnError(string declaration)
+    [InlineData("public static class BadRoot<T> { public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }", "BadRoot<>")]
+    [InlineData(
+        "public static class BadRoot<T> { public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); }",
+        "BadRoot<int>"
+    )]
+    [InlineData(
+        "public static class Outer<T> { public static class BadRoot { public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root) => root(); } }",
+        "Outer<int>.BadRoot"
+    )]
+    public void WindowTheme_WithNoWrapTheAppCanPass_IsAnError(string declaration, string named = "BadRoot")
     {
         MetadataReference library = Run("Demo.Theme", OutputKind.DynamicallyLinkedLibrary, declaration).Emit();
 
-        Result app = Run("Demo.App", OutputKind.ConsoleApplication, "[assembly: XylemUI.WindowTheme(typeof(BadRoot))]\n" + AppMain, library);
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, "[assembly: XylemUI.WindowTheme(typeof(" + named + "))]\n" + AppMain, library);
 
         Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
         Assert.Equal("XYLEM011", diagnostic.Id);
@@ -1159,6 +1196,344 @@ public sealed class ActionTableGeneratorTests
             reasons,
             static reason => Assert.True(reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged, reason.ToString())
         );
+    }
+
+    /// <summary>
+    /// An app that references one assembly with <c>[assembly: PlatformHost]</c> gets a module initializer that calls the named
+    /// class's <c>Register</c> (design §6.0, "ホストの選び方"); a library that references the host gets no such code.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library <c>XylemUI.Platform.Windows</c> that carries <c>[assembly: XylemUI.PlatformHost(typeof(Win32Host))]</c>, the
+    ///   internal attribute of <c>XylemUI.Core</c>, and has <c>public static void Register()</c>, compiled. An app and a library
+    ///   that reference it.
+    ///
+    /// Steps:
+    /// - Run the generator on the host, on the app, and on the library; compile the results.
+    ///
+    /// Expected:
+    /// - The host compiles with no error and gets no source. The app: no diagnostic, no compiler error, and one source whose
+    ///   module initializer calls <c>global::XylemUI.Platform.Windows.Win32Host.Register();</c> once, after the default key bindings
+    ///   of <c>XylemUI.Core</c>. The library: no diagnostic and no source.
+    /// </remarks>
+    [Fact]
+    public void PlatformHost_OfAReferencedAssembly_InitializerCallsItsRegister()
+    {
+        Result hostResult = Run("XylemUI.Platform.Windows", OutputKind.DynamicallyLinkedLibrary, WindowsHost);
+        Assert.Empty(hostResult.CompilerErrors);
+        Assert.Empty(hostResult.Sources);
+        MetadataReference host = hostResult.Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, AppMain, host);
+
+        Assert.Empty(app.GeneratorDiagnostics);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        int initializer = source.IndexOf("internal static void RegisterAll()", StringComparison.Ordinal);
+        int defaults = source.IndexOf("global::XylemUI.CoreKeyBindings.AddDefaults", StringComparison.Ordinal);
+        int register = source.IndexOf(RegisterWindowsHost, StringComparison.Ordinal);
+        Assert.True(initializer > 0 && defaults > initializer && register > defaults, source);
+        Assert.Equal(register, source.LastIndexOf(RegisterWindowsHost, StringComparison.Ordinal));
+
+        Result between = Run("Demo.Between", OutputKind.DynamicallyLinkedLibrary, "public sealed class Plain;", host);
+        Assert.Empty(between.GeneratorDiagnostics);
+        Assert.Empty(between.Sources);
+    }
+
+    /// <summary>
+    /// An app that reaches a host only through a library it references still registers the host: the generator reads
+    /// <c>[assembly: PlatformHost]</c> on every assembly the app references, transitively (design §6.0, "ホストの選び方").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The host <c>XylemUI.Platform.Windows</c> of the tests above, compiled. A library <c>XylemUI.Testing.D3D11</c> whose code
+    ///   calls the host's <c>Win32Host.Register</c>, compiled against it, as the real one references Platform.Windows. An app whose
+    ///   own code names neither, compiled with both as references, the library first: a build passes every transitive reference to
+    ///   the compiler (a project reference flows to the projects that reference the project), so the host is one of the
+    ///   compilation's references only because the library references it.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - No diagnostic and no compiler error. The app's one source calls
+    ///   <c>global::XylemUI.Platform.Windows.Win32Host.Register();</c> once. The library gets no source.
+    /// </remarks>
+    [Fact]
+    public void PlatformHost_ThroughAReferencedLibrary_InitializerCallsItsRegister()
+    {
+        const string TestingLibrary = """
+            namespace XylemUI.Testing.D3D11;
+
+            public static class Frames
+            {
+                public static void Start() => XylemUI.Platform.Windows.Win32Host.Register();
+            }
+            """;
+        MetadataReference host = Run("XylemUI.Platform.Windows", OutputKind.DynamicallyLinkedLibrary, WindowsHost).Emit();
+        Result libraryResult = Run("XylemUI.Testing.D3D11", OutputKind.DynamicallyLinkedLibrary, TestingLibrary, host);
+        Assert.Empty(libraryResult.CompilerErrors);
+        Assert.Empty(libraryResult.Sources);
+        MetadataReference library = libraryResult.Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, AppMain, library, host);
+
+        Assert.Empty(app.GeneratorDiagnostics);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        Assert.Equal(1, Count(source, RegisterWindowsHost));
+    }
+
+    /// <summary>
+    /// An app that references two assemblies with <c>[assembly: PlatformHost]</c> is the error XYLEM008, and its module initializer
+    /// registers neither host (design §6.0, "ホストの選び方").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The host <c>XylemUI.Platform.Windows</c> of the test above, and a second host <c>XylemUI.Testing</c> (another name Core
+    ///   shows its internals to) that names its <c>Demo.OtherHost</c>, which has a valid <c>Register</c>, both compiled. An app that
+    ///   references both, <c>XylemUI.Testing</c> first: the order of the references, and that of the hosts' class names, is the
+    ///   opposite of the assemblies' names.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - One diagnostic, XYLEM008 of severity Error, at no place in the app's source, whose message names
+    ///   <c>'XylemUI.Platform.Windows.Win32Host', 'Demo.OtherHost'</c>: the hosts in the order of their assemblies' names. No
+    ///   compiler error. The app's source still registers the default key bindings of <c>XylemUI.Core</c>, and names neither host.
+    /// </remarks>
+    [Fact]
+    public void PlatformHost_Twice_IsAnErrorAndRegistersNone()
+    {
+        const string OtherHost = """
+            [assembly: XylemUI.PlatformHost(typeof(Demo.OtherHost))]
+
+            namespace Demo;
+
+            public static class OtherHost
+            {
+                public static void Register() { }
+            }
+            """;
+        MetadataReference windows = Run("XylemUI.Platform.Windows", OutputKind.DynamicallyLinkedLibrary, WindowsHost).Emit();
+        MetadataReference other = Run("XylemUI.Testing", OutputKind.DynamicallyLinkedLibrary, OtherHost).Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, AppMain, other, windows);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM008", diagnostic.Id);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal(LocationKind.None, diagnostic.Location.Kind);
+        string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("'XylemUI.Platform.Windows.Win32Host', 'Demo.OtherHost'", message, StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Win32Host", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OtherHost", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A class named by <c>[assembly: PlatformHost]</c> that has no <c>Register</c> the app can call is the error XYLEM009, and
+    /// the host is not registered (design §6.0, "ホストの選び方").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - For each row, a host <c>XylemUI.Platform.Windows</c> whose attribute names, with <c>typeof(BadHost)</c>: a class with no
+    ///   <c>Register</c>; one whose <c>Register</c> is not static; one whose <c>Register</c> takes a parameter; one whose
+    ///   <c>Register</c> returns an int; one whose <c>Register</c> is generic; one whose <c>Register</c> is internal; an internal
+    ///   class; an interface whose <c>Register</c> is <c>static abstract</c>, and one whose <c>Register</c> is
+    ///   <c>static virtual</c>. A generic class with a valid <c>Register</c>, named open (<c>typeof(BadHost&lt;&gt;)</c>, whose call
+    ///   would not compile) and closed (<c>typeof(BadHost&lt;int&gt;)</c>), and a class nested in a generic one
+    ///   (<c>typeof(Outer&lt;int&gt;.BadHost)</c>). Then an attribute whose argument names no class, <c>typeof(int[])</c> and
+    ///   <c>null</c>, beside a valid <c>BadHost</c>. An app that references the host.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - One diagnostic, XYLEM009 of severity Error, at no place in the app's source, whose message names the argument from its
+    ///   start (<c>BadHost</c>, <c>BadHost&lt;</c>, <c>Outer&lt;</c>, <c>int[]</c>, <c>null</c>: how a generic type read from
+    ///   metadata is written after its name is the compiler's) and the host <c>XylemUI.Platform.Windows</c>. No compiler error. The app's
+    ///   source still registers the default key bindings of <c>XylemUI.Core</c>, names no <c>BadHost</c>, and calls no
+    ///   <c>Register</c> but the one of <c>XylemUI.Core</c>'s action table.
+    /// </remarks>
+    /// <param name="argument">The attribute's argument.</param>
+    /// <param name="declaration">The class the host declares.</param>
+    /// <param name="named">What the message names.</param>
+    [Theory]
+    [InlineData("typeof(BadHost)", "public static class BadHost { }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public sealed class BadHost { public void Register() { } }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public static class BadHost { public static void Register(int code) { } }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public static class BadHost { public static int Register() => 0; }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public static class BadHost { public static void Register<T>() { } }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public static class BadHost { internal static void Register() { } }", "BadHost")]
+    [InlineData("typeof(BadHost)", "internal static class BadHost { public static void Register() { } }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public interface BadHost { static abstract void Register(); }", "BadHost")]
+    [InlineData("typeof(BadHost)", "public interface BadHost { static virtual void Register() { } }", "BadHost")]
+    [InlineData("typeof(BadHost<>)", "public static class BadHost<T> { public static void Register() { } }", "BadHost<")]
+    [InlineData("typeof(BadHost<int>)", "public static class BadHost<T> { public static void Register() { } }", "BadHost<")]
+    [InlineData(
+        "typeof(Outer<int>.BadHost)",
+        "public static class Outer<T> { public static class BadHost { public static void Register() { } } }",
+        "Outer<"
+    )]
+    [InlineData("typeof(int[])", "public static class BadHost { public static void Register() { } }", "int[]")]
+    [InlineData("null", "public static class BadHost { public static void Register() { } }", "null")]
+    public void PlatformHost_WithNoRegisterTheAppCanCall_IsAnError(string argument, string declaration, string named)
+    {
+        MetadataReference host = Run(
+                "XylemUI.Platform.Windows",
+                OutputKind.DynamicallyLinkedLibrary,
+                "[assembly: XylemUI.PlatformHost(" + argument + ")]\n" + declaration
+            )
+            .Emit();
+
+        Result app = Run("Demo.App", OutputKind.ConsoleApplication, AppMain, host);
+
+        Diagnostic diagnostic = Assert.Single(app.GeneratorDiagnostics);
+        Assert.Equal("XYLEM009", diagnostic.Id);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal(LocationKind.None, diagnostic.Location.Kind);
+        string message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("'" + named, message, StringComparison.Ordinal);
+        Assert.Contains("XylemUI.Platform.Windows", message, StringComparison.Ordinal);
+        Assert.Empty(app.CompilerErrors);
+        string source = Assert.Single(app.Sources);
+        Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("BadHost", source, StringComparison.Ordinal);
+        Assert.Equal(1, Count(source, ".Register();"));
+        Assert.Contains("global::XylemUI.Generated.XylemUI_CoreActions.Register();", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An app whose references carry no <c>[assembly: PlatformHost]</c> registers no host, also when one of them has a class with a
+    /// <c>Register</c> method: the attribute names the host, not the method's name.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library <c>XylemUI.Platform.Windows</c> with the <c>Win32Host</c> of the tests above and no attribute, compiled. An app
+    ///   that references it, and an app that references <c>XylemUI.Core</c> alone.
+    ///
+    /// Steps:
+    /// - Run the generator on each app; compile the results.
+    ///
+    /// Expected:
+    /// - No diagnostic and no compiler error. Each app's one source registers the default key bindings of <c>XylemUI.Core</c>,
+    ///   names no <c>Win32Host</c>, and calls no <c>Register</c> but the one of <c>XylemUI.Core</c>'s action table.
+    /// </remarks>
+    [Fact]
+    public void App_WithNoPlatformHost_RegistersNone()
+    {
+        const string NoAttribute = """
+            namespace XylemUI.Platform.Windows;
+
+            public static class Win32Host
+            {
+                public static void Register() { }
+            }
+            """;
+        MetadataReference library = Run("XylemUI.Platform.Windows", OutputKind.DynamicallyLinkedLibrary, NoAttribute).Emit();
+
+        Result[] apps = [Run("Demo.App", OutputKind.ConsoleApplication, AppMain, library), Run("Demo.Bare", OutputKind.ConsoleApplication, AppMain)];
+
+        foreach (Result app in apps)
+        {
+            Assert.Empty(app.GeneratorDiagnostics);
+            Assert.Empty(app.CompilerErrors);
+            string source = Assert.Single(app.Sources);
+            Assert.Contains("global::XylemUI.CoreKeyBindings.AddDefaults", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Win32Host", source, StringComparison.Ordinal);
+            Assert.Equal(1, Count(source, ".Register();"));
+        }
+    }
+
+    /// <summary>
+    /// An app whose module initializer has nothing to do but register its host still gets one: the host does not lean on the
+    /// action tables or the default key bindings of <c>XylemUI.Core</c>.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A library <c>Demo.Host</c> compiled without <c>XylemUI.Core</c>, with a stand-in of <c>XylemUI.PlatformHostAttribute</c>,
+    ///   a class <c>Demo.Host</c> with <c>public static void Register()</c>, and the attribute that names it. An app compiled
+    ///   without <c>XylemUI.Core</c> that references the library.
+    ///
+    /// Steps:
+    /// - Run the generator on the app; compile the result.
+    ///
+    /// Expected:
+    /// - No diagnostic and no compiler error. One source, whose module initializer calls <c>global::Demo.Host.Register();</c> and
+    ///   registers no table and no default key bindings.
+    /// </remarks>
+    [Fact]
+    public void PlatformHost_OfAnAppWithNothingElse_InitializerRegistersIt()
+    {
+        const string Library = """
+            [assembly: XylemUI.PlatformHost(typeof(Demo.Host))]
+
+            namespace XylemUI
+            {
+                [System.AttributeUsage(System.AttributeTargets.Assembly)]
+                public sealed class PlatformHostAttribute(System.Type host) : System.Attribute
+                {
+                    public System.Type Host { get; } = host;
+                }
+            }
+
+            namespace Demo
+            {
+                public static class Host
+                {
+                    public static void Register() { }
+                }
+            }
+            """;
+        var options = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable);
+        CSharpCompilation libraryCompilation = CSharpCompilation.Create(
+            "Demo.Host",
+            [CSharpSyntaxTree.ParseText(Library, Options, cancellationToken: TestContext.Current.CancellationToken)],
+            [.. Platform()],
+            options
+        );
+        using var stream = new MemoryStream();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = libraryCompilation.Emit(stream, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "Demo.Bare",
+            [CSharpSyntaxTree.ParseText(AppMain, Options, cancellationToken: TestContext.Current.CancellationToken)],
+            [.. Platform(), MetadataReference.CreateFromImage(stream.ToArray())],
+            options.WithOutputKind(OutputKind.ConsoleApplication)
+        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create([new ActionTableGenerator().AsSourceGenerator()], parseOptions: Options);
+
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation,
+            out Compilation updated,
+            out ImmutableArray<Diagnostic> diagnostics,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Empty(diagnostics);
+        ImmutableArray<Diagnostic> compiled = updated.GetDiagnostics(TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(compiled, static d => d.Severity == DiagnosticSeverity.Error);
+        string source = Assert.Single(driver.GetRunResult().GeneratedTrees).GetText(TestContext.Current.CancellationToken).ToString();
+        Assert.Contains("[global::System.Runtime.CompilerServices.ModuleInitializer]", source, StringComparison.Ordinal);
+        Assert.Contains("            global::Demo.Host.Register();\n", source, StringComparison.Ordinal);
+        Assert.Equal(1, Count(source, ".Register();"));
+        Assert.DoesNotContain("RegisterDefaults", source, StringComparison.Ordinal);
+    }
+
+    // How many times a text holds a part.
+    private static int Count(string text, string part)
+    {
+        int count = 0;
+        for (int at = text.IndexOf(part, StringComparison.Ordinal); at >= 0; at = text.IndexOf(part, at + part.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private static Result Run(string assemblyName, OutputKind kind, string source, params MetadataReference[] references)

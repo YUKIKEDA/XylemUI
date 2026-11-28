@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    The OS host of a sample that starts with XylemApp.Run, chosen at build time by the runtime identifier (design §6.0, "ホストの選び方"):
+    the Windows host for a win-* RID, and for a build with no RID (dotnet run, dotnet build, a test that references the sample) on
+    Windows. The app's module initializer registers the host it references. With no host for the RID the app still builds, and
+    XylemApp.Run throws. How a package app references its host is row C0's. A sample that calls the Windows host's own types references
+    it without this file.
+  -->
+  <PropertyGroup>
+    <XylemUIWindowsHost>false</XylemUIWindowsHost>
+    <XylemUIWindowsHost Condition="$(RuntimeIdentifier.StartsWith('win'))">true</XylemUIWindowsHost>
+    <XylemUIWindowsHost Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">true</XylemUIWindowsHost>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(XylemUIWindowsHost)' == 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.csproj" />
+  </ItemGroup>
+  <!-- AccessKit and the image decoders, linked into a NativeAOT executable, are the Windows host's. -->
+  <Import
+    Project="$(MSBuildThisFileDirectory)..\src\XylemUI.Platform.Windows\XylemUI.Platform.Windows.targets"
+    Condition="'$(XylemUIWindowsHost)' == 'true'"
+  />
+</Project>
