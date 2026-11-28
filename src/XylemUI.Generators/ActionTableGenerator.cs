@@ -90,7 +90,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor NoAddDefaults = new(
         "XYLEM007",
         "The class of the default key bindings has no AddDefaults method",
-        "'{0}' is named by [assembly: DefaultKeyBindings] of '{1}' and has no accessible 'public static void AddDefaults(XylemUI.Keymap keymap)'; its default key bindings are not registered",
+        "'{0}' is named by [assembly: DefaultKeyBindings] of '{1}' and is generic or has no accessible 'public static void AddDefaults(XylemUI.Keymap keymap)'; its default key bindings are not registered",
         "XylemUI",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -108,7 +108,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor NoRegister = new(
         "XYLEM009",
         "The class of the platform host has no Register method",
-        "'{0}' is named by [assembly: PlatformHost] of '{1}' and has no accessible 'public static void Register()'; that host is not registered",
+        "'{0}' is named by [assembly: PlatformHost] of '{1}' and is generic or has no accessible 'public static void Register()'; that host is not registered",
         "XylemUI",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -126,7 +126,7 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor NoWrap = new(
         "XYLEM011",
         "The class of the window theme has no Wrap method",
-        "'{0}' is named by [assembly: WindowTheme] and has no accessible 'public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root)'; the windows are not wrapped",
+        "'{0}' is named by [assembly: WindowTheme] and is generic or has no accessible 'public static XylemUI.Element Wrap(System.Func<XylemUI.Element> root)'; the windows are not wrapped",
         "XylemUI",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
@@ -345,11 +345,14 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         return hosts.ToImmutable();
     }
 
-    // Whether a class has the method the module initializer calls: static and neither abstract nor virtual (an interface's static
-    // abstract or virtual member cannot be called through the interface), not generic, with no parameter and no result, and one the
-    // app's code can call.
+    // Whether a class has the method the module initializer calls. The class is neither generic nor nested in a generic class: the
+    // call names the class as the attribute gives it, and a call through an open type (typeof(Host<>)) does not compile; a closed
+    // one (typeof(Host<int>)) is refused with it, so that the rule is one. The method is static and neither abstract nor virtual (an
+    // interface's static abstract or virtual member cannot be called through the interface), not generic, with no parameter and no
+    // result, and one the app's code can call.
     private static bool HasRegister(INamedTypeSymbol type, Compilation compilation) =>
-        type.GetMembers(RegisterName)
+        !type.IsGenericType
+        && type.GetMembers(RegisterName)
             .OfType<IMethodSymbol>()
             .Any(m =>
                 m.IsStatic
@@ -392,12 +395,14 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
         return themes.ToImmutable();
     }
 
-    // Whether a class has the method the module initializer passes to WindowRoot.SetWrapper as a Func<Func<Element>, Element>:
-    // static and neither abstract nor virtual (an interface's static abstract or virtual member cannot be named through the
-    // interface), not generic, an Element from one Func<Element> taken by value, and one the app's code can call. The types are
-    // compared as symbols, so that a nullable annotation (Func<Element>? root) does not count.
+    // Whether a class has the method the module initializer passes to WindowRoot.SetWrapper as a Func<Func<Element>, Element>. The
+    // class is neither generic nor nested in a generic class, as for HasRegister. The method is static and neither abstract nor
+    // virtual (an interface's static abstract or virtual member cannot be named through the interface), not generic, an Element
+    // from one Func<Element> taken by value, and one the app's code can call. The types are compared as symbols, so that a nullable
+    // annotation (Func<Element>? root) does not count.
     private static bool HasWrap(INamedTypeSymbol type, INamedTypeSymbol element, Compilation compilation) =>
-        type.GetMembers(WrapName)
+        !type.IsGenericType
+        && type.GetMembers(WrapName)
             .OfType<IMethodSymbol>()
             .Any(m =>
                 m.IsStatic
@@ -475,17 +480,20 @@ public sealed class ActionTableGenerator : IIncrementalGenerator
                 continue;
             }
 
-            // The method the module initializer names: static, with a keymap as its one parameter, and one the app's code can
-            // call (public, or internal in the app itself and in an assembly that shows the app its internals).
-            bool callable = type.GetMembers(AddDefaultsName)
-                .OfType<IMethodSymbol>()
-                .Any(m =>
-                    m.IsStatic
-                    && m.ReturnsVoid
-                    && m.Parameters.Length == 1
-                    && m.Parameters[0].Type.ToDisplayString() == "XylemUI.Keymap"
-                    && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
-                );
+            // The method the module initializer names: of a class neither generic nor nested in a generic class (as for
+            // HasRegister), static, with a keymap as its one parameter, and one the app's code can call (public, or internal in the
+            // app itself and in an assembly that shows the app its internals).
+            bool callable =
+                !type.IsGenericType
+                && type.GetMembers(AddDefaultsName)
+                    .OfType<IMethodSymbol>()
+                    .Any(m =>
+                        m.IsStatic
+                        && m.ReturnsVoid
+                        && m.Parameters.Length == 1
+                        && m.Parameters[0].Type.ToDisplayString() == "XylemUI.Keymap"
+                        && compilation.IsSymbolAccessibleWithin(m, compilation.Assembly)
+                    );
             found.Add(
                 (
                     assembly,

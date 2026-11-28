@@ -44,7 +44,8 @@ public static class XylemApp
         }
 
         // The host the app was built with, which its module initializer registered (design §6.0, "ホストの選び方"). Read before the
-        // loop counts as running, so that a run that throws for want of one changes nothing.
+        // loop counts as running, so that a run that throws for want of one leaves, as the throw above does, only the calling
+        // thread recorded as the UI thread: no loop counts as running, and no dispatcher or window is made.
         Func<IPlatformApp> host =
             PlatformHostRegistry.Factory
             ?? throw new InvalidOperationException(

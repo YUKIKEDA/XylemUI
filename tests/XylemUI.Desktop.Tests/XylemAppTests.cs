@@ -21,19 +21,39 @@ public sealed class XylemAppTests(UiThreadFixture ui)
     /// <remarks>
     /// Preconditions:
     /// - The test executable references <c>XylemUI.Platform.Windows</c>, whose <c>[assembly: PlatformHost]</c> names
-    ///   <see cref="Win32Host"/>; its module initializer ran when the assembly loaded.
+    ///   <see cref="Win32Host"/>. The samples it references (Counter, Todo) are apps whose module initializers register the host
+    ///   too, so the test runs theirs first, sets <see cref="PlatformHostRegistry.Factory"/> to <see langword="null"/>, and then
+    ///   calls this executable's own generated module initializer, <c>XylemUI_Desktop_TestsActions.RegisterAll</c>, again: a
+    ///   module constructor runs once per module, and the initializer's other calls (the action tables, the default key bindings)
+    ///   take the same values twice. The registered factory is put back after.
     ///
     /// Steps:
-    /// - Read <see cref="PlatformHostRegistry.Factory"/>; on the UI thread, make a host with it and dispose it.
+    /// - Call the initializer; read <see cref="PlatformHostRegistry.Factory"/>; on the UI thread, make a host with it and dispose
+    ///   it.
     ///
     /// Expected:
-    /// - The factory is set, and the host it makes is a <see cref="Win32PlatformApp"/>.
+    /// - The factory is set, and the host it makes is a <see cref="Win32PlatformApp"/>. That this initializer calls the real
+    ///   <see cref="Win32Host.Register"/> also checks the generator against the real host's shape, which the generator's tests
+    ///   cannot reference.
     /// </remarks>
     [Fact]
     public void ModuleInitializer_RegistersTheWindowsHost() =>
         ui.Invoke(() =>
         {
-            Func<IPlatformApp>? factory = PlatformHostRegistry.Factory;
+            RuntimeHelpers.RunModuleConstructor(typeof(global::Counter.CounterApp).Module.ModuleHandle);
+            RuntimeHelpers.RunModuleConstructor(typeof(global::Todo.TodoApp).Module.ModuleHandle);
+            Func<IPlatformApp>? registered = PlatformHostRegistry.Factory;
+            PlatformHostRegistry.Factory = null;
+            Func<IPlatformApp>? factory;
+            try
+            {
+                global::XylemUI.Generated.XylemUI_Desktop_TestsActions.RegisterAll();
+                factory = PlatformHostRegistry.Factory;
+            }
+            finally
+            {
+                PlatformHostRegistry.Factory = registered;
+            }
 
             Assert.NotNull(factory);
             using IPlatformApp app = factory();
@@ -42,7 +62,8 @@ public sealed class XylemAppTests(UiThreadFixture ui)
 
     /// <summary>
     /// With no host registered, <c>XylemApp.Run</c> throws <see cref="InvalidOperationException"/> whose message names the
-    /// runtime identifier, and opens no window and changes no dispatcher (design §6.0, "ホストの選び方").
+    /// runtime identifier, and opens no window, changes no dispatcher, and leaves no loop counted as running (design §6.0,
+    /// "ホストの選び方").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -51,12 +72,13 @@ public sealed class XylemAppTests(UiThreadFixture ui)
     ///   <see cref="PlatformHostRegistry.Factory"/> to <see langword="null"/> and puts the registered one back after.
     ///
     /// Steps:
-    /// - Run the app with a root function that counts its runs.
+    /// - Run the app with a root function that counts its runs; then run it again, still with no host.
     ///
     /// Expected:
-    /// - It throws <see cref="InvalidOperationException"/> whose message contains
-    ///   <see cref="RuntimeInformation.RuntimeIdentifier"/> and "No platform host is registered". The root function did not run,
-    ///   and <see cref="UiDispatcher.Current"/> is the one before the run.
+    /// - The first run throws <see cref="InvalidOperationException"/> whose message contains
+    ///   <see cref="RuntimeInformation.RuntimeIdentifier"/> and "No platform host is registered". The second throws the same
+    ///   message, not "it already runs": the first left no loop counted as running. The root function did not run, and
+    ///   <see cref="UiDispatcher.Current"/> is the one before the runs.
     /// </remarks>
     [Fact]
     public void Run_WithNoHostRegistered_ThrowsNamingTheRuntimeIdentifier() =>
@@ -68,19 +90,18 @@ public sealed class XylemAppTests(UiThreadFixture ui)
             int runs = 0;
             Func<IPlatformApp>? registered = PlatformHostRegistry.Factory;
             PlatformHostRegistry.Factory = null;
+            Func<Element> root = () =>
+            {
+                runs++;
+                return Box();
+            };
+            var options = new WindowOptions("No host test", 100, 80);
             InvalidOperationException thrown;
+            InvalidOperationException again;
             try
             {
-                thrown = Assert.Throws<InvalidOperationException>(() =>
-                    XylemApp.Run(
-                        () =>
-                        {
-                            runs++;
-                            return Box();
-                        },
-                        new WindowOptions("No host test", 100, 80)
-                    )
-                );
+                thrown = Assert.Throws<InvalidOperationException>(() => XylemApp.Run(root, options));
+                again = Assert.Throws<InvalidOperationException>(() => XylemApp.Run(root, options));
             }
             finally
             {
@@ -89,6 +110,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
 
             Assert.Contains(RuntimeInformation.RuntimeIdentifier, thrown.Message, StringComparison.Ordinal);
             Assert.Contains("No platform host is registered", thrown.Message, StringComparison.Ordinal);
+            Assert.Contains("No platform host is registered", again.Message, StringComparison.Ordinal);
             Assert.Equal(0, runs);
             Assert.Same(before, UiDispatcher.Current);
         });
