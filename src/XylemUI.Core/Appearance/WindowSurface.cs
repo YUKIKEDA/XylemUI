@@ -7,7 +7,8 @@ namespace XylemUI;
 /// </summary>
 /// <remarks>
 /// The window core paints a value that differs from the last one: the color behind the tree from the next frame on, and the title
-/// bar through the window tier (<see cref="IPlatformWindow.SetDarkTitleBar"/>). The headless app also shows the values it was given
+/// bar through the window tier (<see cref="IPlatformWindow.SetDarkTitleBar"/>). A value is kept only after its paint returns, so a
+/// paint that threw is tried again with the same value. The headless app also shows the values it was given
 /// (<c>HeadlessApp.Backdrop</c> and <c>HeadlessApp.DarkTitleBar</c>).
 /// </remarks>
 public sealed class WindowSurface
@@ -27,12 +28,12 @@ public sealed class WindowSurface
     public static Context<WindowSurface> Current { get; } = new();
 
     /// <summary>
-    /// Gets the color set last with <see cref="SetBackdrop"/>; <see langword="null"/> before the first.
+    /// Gets the color set last with <see cref="SetBackdrop"/> whose call returned; <see langword="null"/> before the first.
     /// </summary>
     internal Color? Backdrop { get; private set; }
 
     /// <summary>
-    /// Gets the value set last with <see cref="SetDarkTitleBar"/>; <see langword="null"/> before the first.
+    /// Gets the value set last with <see cref="SetDarkTitleBar"/> whose call returned; <see langword="null"/> before the first.
     /// </summary>
     internal bool? DarkTitleBar { get; private set; }
 
@@ -47,8 +48,8 @@ public sealed class WindowSurface
         UiThread.VerifyAccess();
         if (Backdrop != color)
         {
-            Backdrop = color;
             _paintBackdrop?.Invoke(color);
+            Backdrop = color;
         }
     }
 
@@ -63,8 +64,8 @@ public sealed class WindowSurface
         UiThread.VerifyAccess();
         if (DarkTitleBar != dark)
         {
-            DarkTitleBar = dark;
             _paintTitleBar?.Invoke(dark);
+            DarkTitleBar = dark;
         }
     }
 

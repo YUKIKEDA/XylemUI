@@ -91,6 +91,10 @@ internal sealed class TestHost(bool useWarp, Func<IRenderTarget, IRenderTarget>?
     // The window opened last; kept after it is disposed.
     public Win32PlatformWindow? Window { get; private set; }
 
+    // What wraps each window it opens before the window core gets it, for a test that records the core's calls; null gives the
+    // window itself.
+    public Func<IPlatformWindow, IPlatformWindow>? WrapWindow { get; init; }
+
     public UiDispatcher Dispatcher => Win32MessageLoop.Dispatcher;
 
     public IFontProvider Fonts => _fonts;
@@ -105,7 +109,7 @@ internal sealed class TestHost(bool useWarp, Func<IRenderTarget, IRenderTarget>?
     {
         Window = new Win32PlatformWindow(core, _settings, title, width, height, useWarp, wrapTarget: wrapTarget);
         Window.Window.MessageHook = messageHook;
-        return Window;
+        return WrapWindow is null ? Window : WrapWindow(Window);
     }
 
     public int Run() => Win32MessageLoop.Run();

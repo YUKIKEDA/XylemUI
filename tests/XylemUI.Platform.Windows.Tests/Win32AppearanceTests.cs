@@ -1,3 +1,6 @@
+using TerraFX.Interop.Windows;
+using static TerraFX.Interop.Windows.Windows;
+
 namespace XylemUI.Platform.Windows.Tests;
 
 // How the Windows host makes the OS's appearance from what it reads (row TH1, design §13.2, "Windows で読むもの"): light or dark
@@ -128,8 +131,10 @@ public sealed class Win32AppearanceTests(UiThreadFixture ui)
     }
 
     /// <summary>
-    /// The real reading on this machine gives an appearance the window core takes: its high contrast and its colors agree, the
-    /// accent color read is opaque, and a second reading with no change of Windows between gives the same value.
+    /// The real reading on this machine gives an appearance the window core takes and that agrees with Windows: its high contrast
+    /// and its colors agree, the accent color read is opaque, and a second reading with no change of Windows between gives the same
+    /// value. With high contrast off, UISettings was read: there is an accent color, and the scheme its foreground gives is the app
+    /// mode in the registry, as spike #888 found in each of its switches (docs/benchmarks/th1-os-appearance.md).
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -137,11 +142,13 @@ public sealed class Win32AppearanceTests(UiThreadFixture ui)
     ///   changed.
     ///
     /// Steps:
-    /// - Read the appearance twice, the second from the first.
+    /// - Read the appearance twice, the second from the first. With high contrast off, read <c>AppsUseLightTheme</c> under
+    ///   <c>HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize</c> with <c>RegGetValueW</c>.
     ///
     /// Expected:
     /// - High contrast is on exactly when there are high-contrast colors; an accent color read has the alpha 255; the two readings
-    ///   are equal.
+    ///   are equal. With high contrast off, an accent color was read, and the scheme is light when the value is 1 or missing, dark
+    ///   when it is 0. A reading that failed and fell back to light with no accent fails the test.
     /// </remarks>
     [Fact]
     public void Read_OnThisMachine_GivesAnAppearanceThatAgrees() =>
@@ -153,5 +160,36 @@ public sealed class Win32AppearanceTests(UiThreadFixture ui)
             Assert.Equal(first.HighContrast, first.Contrast.HasValue);
             Assert.True(first.Accent is null || first.Accent.Value.A == 255);
             Assert.Equal(first, second);
+            if (first.Contrast is null)
+            {
+                Assert.NotNull(first.Accent);
+                Assert.Equal(AppsUseLightTheme() ? ColorScheme.Light : ColorScheme.Dark, first.Scheme);
+            }
         });
+
+    // The app mode Windows keeps for the current user: 1 for light apps, 0 for dark ones, and light when the value is missing.
+    private static unsafe bool AppsUseLightTheme()
+    {
+        uint value = 0;
+        uint size = sizeof(uint);
+        int result;
+        fixed (
+            char* key = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                name = "AppsUseLightTheme"
+        )
+        {
+            result = RegGetValueW(HKEY.HKEY_CURRENT_USER, key, name, RRF.RRF_RT_REG_DWORD, null, &value, &size);
+        }
+
+        // ERROR_FILE_NOT_FOUND and ERROR_SUCCESS (winerror.h); TerraFX's ERROR type and Windows.ERROR are ambiguous here.
+        const int fileNotFound = 2;
+        const int success = 0;
+        if (result == fileNotFound)
+        {
+            return true;
+        }
+
+        Assert.Equal(success, result);
+        return value != 0;
+    }
 }

@@ -77,6 +77,62 @@ public sealed class WindowSurfaceTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// A value is kept only after its paint returns: a paint that throws leaves the value before, and setting the same value again
+    /// paints it again (the Windows host throws when DWM refuses the title bar, design §13.2, "題名の棒").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A new surface bound to two paints that record each value they are given and throw on their first call.
+    ///
+    /// Steps:
+    /// - Set a dark title bar, read the surface's value, and set a dark title bar again. Do the same with the backdrop #292929.
+    ///
+    /// Expected:
+    /// - The first call of each throws what its paint threw and the surface still has no value; the second paints the same value
+    ///   again and the surface keeps it. Each paint was given its value twice.
+    /// </remarks>
+    [Fact]
+    public void SetBackdropAndSetDarkTitleBar_AfterAPaintThatThrew_PaintTheSameValueAgain() =>
+        ui.Invoke(() =>
+        {
+            var surface = new WindowSurface();
+            var backdrops = new List<Color>();
+            var titleBars = new List<bool>();
+            surface.Bind(PaintBackdrop, PaintTitleBar);
+            Color dark = Color.FromRgb(0x292929);
+
+            _ = Assert.Throws<InvalidOperationException>(() => surface.SetDarkTitleBar(true));
+            bool? afterFailedTitleBar = surface.DarkTitleBar;
+            surface.SetDarkTitleBar(true);
+            _ = Assert.Throws<InvalidOperationException>(() => surface.SetBackdrop(dark));
+            Color? afterFailedBackdrop = surface.Backdrop;
+            surface.SetBackdrop(dark);
+
+            Assert.Equal(((bool?)null, (Color?)null), (afterFailedTitleBar, afterFailedBackdrop));
+            Assert.Equal(((bool?)true, (Color?)dark), (surface.DarkTitleBar, surface.Backdrop));
+            Assert.Equal([true, true], titleBars);
+            Assert.Equal([dark, dark], backdrops);
+
+            void PaintBackdrop(Color color)
+            {
+                backdrops.Add(color);
+                if (backdrops.Count == 1)
+                {
+                    throw new InvalidOperationException("The first paint of the backdrop fails.");
+                }
+            }
+
+            void PaintTitleBar(bool value)
+            {
+                titleBars.Add(value);
+                if (titleBars.Count == 1)
+                {
+                    throw new InvalidOperationException("The first paint of the title bar fails.");
+                }
+            }
+        });
+
+    /// <summary>
     /// The surface belongs to the UI thread: a call from another thread throws and changes nothing.
     /// </summary>
     /// <remarks>

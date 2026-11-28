@@ -246,14 +246,16 @@ public sealed class XylemAppTests(UiThreadFixture ui)
     ///   (<c>IsWindowVisible</c>) and whether it clears with #292929, and checks that the renderer's size is the client rectangle's
     ///   and that the list's scale is the window's DPI over 96; and at each present, whether the window is visible and whether its
     ///   <c>DWMWA_USE_IMMERSIVE_DARK_MODE</c> is set. The host's message hook records the first message the window gets while it is
-    ///   visible, with the attribute then.
+    ///   visible, with the attribute then. The host gives the core its window wrapped in one that records the calls of
+    ///   <c>RootMounted</c> and <c>Show</c> before it passes them on.
     ///
     /// Steps:
     /// - Open the window of a box as <c>XylemApp.Run</c> does: shown after its first frame.
     ///
     /// Expected:
-    /// - The first three records are the first frame's draw, hidden and with #292929; its present, hidden and with the dark title
-    ///   bar; and then the window's first visible message, with the dark title bar. After the open the window is visible.
+    /// - The first five records are the first frame's draw, hidden and with #292929; its present, hidden and with the dark title
+    ///   bar; <c>RootMounted</c>; <c>Show</c>; and then the window's first visible message, with the dark title bar. After the open
+    ///   the window is visible.
     /// - Every draw found the renderer at the client size and the list at the window's scale, and the root box has the client size
     ///   divided by the scale.
     /// - A show that also changes the window's size (the first <c>ShowWindow</c> of a process takes the show command its starter
@@ -284,7 +286,10 @@ public sealed class XylemAppTests(UiThreadFixture ui)
 
                     return false;
                 }
-            );
+            )
+            {
+                WrapWindow = inner => new RecordingWindow(inner, log),
+            };
             TestRootWrapper.Inner = given =>
             {
                 WindowSurface surface = WindowSurface.Current.Use();
@@ -309,8 +314,8 @@ public sealed class XylemAppTests(UiThreadFixture ui)
                 float scale = window.Window.ScaleFactor;
                 Rect root = window.Tree.Nodes.GetRef(window.Core.RootNode).Layout.Rect;
 
-                string[] expected = ["draw hidden backdrop", "present hidden dark", "visible dark"];
-                Assert.Equal(expected, log.Take(3));
+                string[] expected = ["draw hidden backdrop", "present hidden dark", "root mounted", "show", "visible dark"];
+                Assert.Equal(expected, log.Take(5));
                 Assert.True(visible);
                 Assert.Empty(mismatches);
                 Assert.Equal((width / scale, height / scale), (root.Width, root.Height));
@@ -367,5 +372,48 @@ public sealed class XylemAppTests(UiThreadFixture ui)
             log.Add("present " + VisibilityOf(hwnd) + " " + TitleBar(hwnd));
             inner.Present();
         }
+    }
+
+    // Passes every member on to the host's window, and records the two calls the order of creation puts after the first frame,
+    // before it passes them on.
+    private sealed class RecordingWindow(IPlatformWindow inner, List<string> log) : IPlatformWindow
+    {
+        public (int Width, int Height) ClientSize => inner.ClientSize;
+
+        public float ScaleFactor => inner.ScaleFactor;
+
+        public bool IsShowing => inner.IsShowing;
+
+        public bool IsActive => inner.IsActive;
+
+        public TextRenderingParameters TextRendering => inner.TextRendering;
+
+        public IRenderTarget Target => inner.Target;
+
+        public IFrameScheduler FrameScheduler => inner.FrameScheduler;
+
+        public IPointerPlatform Pointer => inner.Pointer;
+
+        public ITextInputPlatform? TextInput => inner.TextInput;
+
+        public void Attach() => inner.Attach();
+
+        public void RootMounted()
+        {
+            log.Add("root mounted");
+            inner.RootMounted();
+        }
+
+        public void Show()
+        {
+            log.Add("show");
+            inner.Show();
+        }
+
+        public void RequestClose() => inner.RequestClose();
+
+        public void SetDarkTitleBar(bool dark) => inner.SetDarkTitleBar(dark);
+
+        public void Dispose() => inner.Dispose();
     }
 }
