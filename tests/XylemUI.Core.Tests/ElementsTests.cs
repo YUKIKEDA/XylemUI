@@ -146,7 +146,8 @@ public sealed class ElementsTests(UiThreadFixture ui)
 
     /// <summary>
     /// The chain writes each value to the node's style or look through the tree's setters and returns the same element; a gap on a
-    /// node that is not a flex container and a size of text on a node that is not text throw.
+    /// node that is not a flex container and a language on a node that is not text throw, and the text style of a node that is not
+    /// text is the one it gives the text below it (design §2.13, "The text style a container gives").
     /// </summary>
     /// <remarks>
     /// Preconditions:
@@ -154,12 +155,14 @@ public sealed class ElementsTests(UiThreadFixture ui)
     ///
     /// Steps:
     /// - On a row: width 40, height 30, padding 4 and 2, gap 6, a border of 1 in red, the blue background, corner radius 3, opacity
-    ///   0.5, the hand cursor, and the pointer blocked. Then call gap and size of text on a box.
+    ///   0.5, the hand cursor, and the pointer blocked. Then call gap and language on a box, and the six text style setters on it:
+    ///   size 12, weight 600, italic, condensed, the family "Serif", and a line height of 18.
     ///
     /// Expected:
     /// - The chain returns the row each time; the style has the sizes, the padding, the gap, and the border; the look has the
-    ///   background, the border's paint, the radii, and the opacity; the input has the cursor and blocks the pointer. The two calls
-    ///   on the box throw <see cref="InvalidOperationException"/>.
+    ///   background, the border's paint, the radii, and the opacity; the input has the cursor and blocks the pointer. Gap and
+    ///   language on the box throw <see cref="InvalidOperationException"/>. The text style setters return the box, and the box
+    ///   holds the six fields with those values (a line height in pixels); its layout style is the one it had.
     /// </remarks>
     [Fact]
     public void Chain_WritesTheNode_AndReturnsTheSameElement() =>
@@ -198,7 +201,23 @@ public sealed class ElementsTests(UiThreadFixture ui)
 
                 Element box = Box();
                 Assert.Throws<InvalidOperationException>(() => box.Gap(1));
-                Assert.Throws<InvalidOperationException>(() => box.FontSize(12));
+                Assert.Throws<InvalidOperationException>(() => box.Language(default));
+
+                LayoutStyle boxStyle = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+                Element styled = box.FontSize(12)
+                    .FontWeight(new FontWeight(600))
+                    .FontSlant(FontSlant.Italic)
+                    .FontStretch(FontStretch.Condensed)
+                    .FontFamily("Serif")
+                    .LineHeight(18);
+                Assert.Equal(box, styled);
+                InheritedTextStyle held = scene.Tree.HeldTextStyleOf(box.Node);
+                Assert.Equal(TextStyleFields.All, held.Fields);
+                Assert.Equal(
+                    ("Serif", 600, FontSlant.Italic, FontStretch.Condensed, 12f, 18f),
+                    (held.Family, held.Weight.Value, held.Slant, held.Stretch, held.Size, held.LineHeight)
+                );
+                Assert.Equal(boxStyle, scene.Tree.Nodes.GetRef(box.Node).Layout.Style);
                 return Column(row, box);
             });
             scene.Dispose();
@@ -1549,6 +1568,43 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
 
     /// <summary>
+    /// An overflow past the last value of <see cref="Overflow"/> throws, on either axis, and leaves the node's overflow as it was; the
+    /// last value is taken.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene with a box.
+    ///
+    /// Steps:
+    /// - Call <c>Overflow</c> with (4, Visible), (255, Visible), (Visible, 4), and (Visible, 255); read the overflow. Then call it with
+    ///   (Scroll, Scroll).
+    ///
+    /// Expected:
+    /// - The four calls throw <see cref="ArgumentOutOfRangeException"/>, and the overflow is still visible on both axes; the last call
+    ///   writes scroll on both.
+    /// </remarks>
+    [Fact]
+    public void Overflow_ValuePastTheLast_Throws() =>
+        ui.Invoke(() =>
+        {
+            var scene = new Scene();
+            Element box = default;
+            scene.Mount(() => box = Box());
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow((Overflow)4, Overflow.Visible));
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow((Overflow)255, Overflow.Visible));
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow(Overflow.Visible, (Overflow)4));
+            Assert.Throws<ArgumentOutOfRangeException>(() => box.Overflow(Overflow.Visible, (Overflow)255));
+            LayoutStyle refused = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+            _ = box.Overflow(Overflow.Scroll, Overflow.Scroll);
+            LayoutStyle taken = scene.Tree.Nodes.GetRef(box.Node).Layout.Style;
+
+            Assert.Equal((Overflow.Visible, Overflow.Visible), (refused.OverflowX, refused.OverflowY));
+            Assert.Equal((Overflow.Scroll, Overflow.Scroll), (taken.OverflowX, taken.OverflowY));
+            scene.Dispose();
+        });
+
+    /// <summary>
     /// <c>JustifyContent</c> and <c>AlignItems</c> throw on a thread that is not the UI thread, and write nothing.
     /// </summary>
     /// <remarks>
@@ -1580,6 +1636,46 @@ public sealed class ElementsTests(UiThreadFixture ui)
         {
             FlexProps props = FlexOf(scene!, row);
             Assert.Equal((default(ContentAlignment), default(ItemAlignment)), (props.JustifyContent, props.AlignItems));
+            scene!.Dispose();
+        });
+    }
+
+    /// <summary>
+    /// The six text style setters throw on a thread that is not the UI thread, and write nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column made and mounted on the UI thread, with no text style; the test's own thread is another.
+    ///
+    /// Steps:
+    /// - On the test's thread, call <c>FontSize(12)</c>, <c>FontWeight(Bold)</c>, <c>FontSlant(Italic)</c>,
+    ///   <c>FontStretch(Condensed)</c>, <c>FontFamily("Serif")</c>, and <c>LineHeight(18)</c> on the column; then read its held text
+    ///   style on the UI thread.
+    ///
+    /// Expected:
+    /// - Each call throws <see cref="InvalidOperationException"/>; the column holds no field.
+    /// </remarks>
+    [Fact]
+    public void TextStyleSetters_OffTheUiThread_Throw()
+    {
+        Scene? scene = null;
+        Element column = default;
+        ui.Invoke(() =>
+        {
+            scene = new Scene();
+            scene.Mount(() => column = Column());
+        });
+
+        Assert.Throws<InvalidOperationException>(() => column.FontSize(12));
+        Assert.Throws<InvalidOperationException>(() => column.FontWeight(FontWeight.Bold));
+        Assert.Throws<InvalidOperationException>(() => column.FontSlant(FontSlant.Italic));
+        Assert.Throws<InvalidOperationException>(() => column.FontStretch(FontStretch.Condensed));
+        Assert.Throws<InvalidOperationException>(() => column.FontFamily("Serif"));
+        Assert.Throws<InvalidOperationException>(() => column.LineHeight(18));
+
+        ui.Invoke(() =>
+        {
+            Assert.Equal(TextStyleFields.None, scene!.Tree.HeldTextStyleOf(column.Node).Fields);
             scene!.Dispose();
         });
     }

@@ -716,6 +716,65 @@ public sealed class FluentTests
     }
 
     /// <summary>
+    /// The text of a button's content takes the theme's Body1Strong from the row around it, Fluent's medium button's text: weight
+    /// 600, size 14, and a line of 20 px; a text's own field keeps its value, an icon keeps its own style, and a theme of other
+    /// typography gives the text its values (design §13.2, "文字のスタイル").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A wrapped app, light, that asks for the light theme from a signal, of a button around a row of the icon Add24Regular, a
+    ///   text with no field of its own, and a text of its own weight 700; the light theme with Body1Strong 16 / 22 / 800 made
+    ///   before.
+    ///
+    /// Steps:
+    /// - Pump; read the three styles. Set the theme with the other typography; pump; read them again.
+    ///
+    /// Expected:
+    /// - Light: the text 600, 14, and 20 / 14; the bold text 700, 14, and 20 / 14; the icon 400, 24, and 1 (its own line, a multiple
+    ///   of its size). The other typography: the text 800, 16, and 22 / 16; the bold text 700, 16, and 22 / 16; the icon as before.
+    /// </remarks>
+    /// <returns>A task that completes when the test ends.</returns>
+    [UiFact]
+    public async Task Button_TextOfTheContent_TakesBody1Strong_AndFollowsTheTheme()
+    {
+        FluentTheme light = FluentTheme.Create(ThemeVariant.Light, Density.Standard, null);
+        FluentTheme other = light with
+        {
+            Typography = light.Typography with { Body1Strong = new FluentTextStyle(16, 22, new XylemUI.Text.FontWeight(800)) },
+        };
+        Signal<FluentTheme> window = Signal.Create(light);
+        Element icon = default;
+        Element text = default;
+        Element bold = default;
+        await using HeadlessApp app = await HeadlessApp.StartAsync(
+            () =>
+            {
+                FluentTheme.RequestForWindow(window);
+                return Row(
+                    Fluent.Button(
+                        Row(
+                            icon = Primitive.Icon(FluentIcons.Add24Regular),
+                            text = Elements.Text("Add"),
+                            bold = Elements.Text("Bold").FontWeight(XylemUI.Text.FontWeight.Bold)
+                        ),
+                        () => { }
+                    )
+                );
+            },
+            Options(Light)
+        );
+        _ = app.PumpAndSettle();
+        (int, float, float)[] before = [Typography(app, text), Typography(app, bold), Typography(app, icon)];
+
+        window.Set(other);
+        _ = app.PumpAndSettle();
+        (int, float, float)[] after = [Typography(app, text), Typography(app, bold), Typography(app, icon)];
+
+        Assert.Equal([(600, 14f, 20f / 14f), (700, 14f, 20f / 14f), (400, 24f, 1f)], before);
+        Assert.Equal([(800, 16f, 22f / 16f), (700, 16f, 22f / 16f), (400, 24f, 1f)], after);
+    }
+
+    /// <summary>
     /// A standard, a primary, and a disabled button match their golden in each variant (design §13.2, "確かめ方").
     /// </summary>
     /// <remarks>
@@ -726,10 +785,11 @@ public sealed class FluentTests
     ///   with no accent color.
     ///
     /// Steps:
-    /// - Pump; compare the frame with the variant's golden.
+    /// - Pump; read the three labels' styles; compare the frame with the variant's golden.
     ///
     /// Expected:
-    /// - The frame matches fluent-button-light.png, fluent-button-dark.png, or fluent-button-high-contrast.png.
+    /// - Each label has the theme's Body1Strong: weight 600, size 14, and a line of 20 px (20 / 14). The frame matches
+    ///   fluent-button-light.png, fluent-button-dark.png, or fluent-button-high-contrast.png.
     /// </remarks>
     /// <param name="variant">The variant of the OS's appearance.</param>
     /// <param name="golden">The golden's file name.</param>
@@ -746,12 +806,13 @@ public sealed class FluentTests
             ThemeVariant.Dark => Dark,
             _ => new SystemAppearance(ColorScheme.Dark, true, null, Black),
         };
+        Element[] labels = new Element[3];
         await using HeadlessApp app = await HeadlessApp.StartAsync(
             () =>
                 Row(
-                        Fluent.Button(Elements.Text("Save"), () => { }),
-                        Fluent.Button(Elements.Text("Send"), () => { }, ButtonAppearance.Primary),
-                        Fluent.Button(Elements.Text("Off"), () => { }).Disabled()
+                        Fluent.Button(labels[0] = Elements.Text("Save"), () => { }),
+                        Fluent.Button(labels[1] = Elements.Text("Send"), () => { }, ButtonAppearance.Primary),
+                        Fluent.Button(labels[2] = Elements.Text("Off"), () => { }).Disabled()
                     )
                     .Padding(16)
                     .Gap(8),
@@ -764,6 +825,8 @@ public sealed class FluentTests
         );
         _ = app.PumpAndSettle();
 
+        // The golden's labels are drawn in Body1Strong (design §13.2, "文字のスタイル"): the images hold its line of 20 px.
+        Assert.All(labels, label => Assert.Equal((600, 14f, 20f / 14f), Typography(app, label)));
         await app.MatchesGoldenAsync(golden);
     }
 
@@ -860,6 +923,13 @@ public sealed class FluentTests
     }
 
     private static Color[] Rgb(uint[] values) => Array.ConvertAll(values, Color.FromRgb);
+
+    // The weight, size, and line height (a multiple of the size) of a text's style.
+    private static (int Weight, float Size, float LineHeight) Typography(HeadlessApp app, Element text)
+    {
+        TextStyle style = app.Tree.Nodes.GetRef(text.Node).Text!.Style;
+        return (style.Font.Weight.Value, style.Size, style.LineHeight);
+    }
 
     // The content's place in its button: the content's rectangle is the centering row's, and the row's is the button's (each
     // rectangle is in its parent's coordinates). It checks that the row is the content's parent and the button the row's.

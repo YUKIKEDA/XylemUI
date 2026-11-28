@@ -6,7 +6,8 @@ namespace XylemUI.Theme.Fluent;
 /// The look a <see cref="Fluent.Button"/> takes from a theme, made once for each theme and appearance (design §13.2, "setter"), so
 /// that a button's effect allocates nothing when the theme changes. The values are those of Fluent's medium button
 /// (<c>useButtonStyles.styles.ts</c> at microsoft/fluentui 1f59fc2: the base lines 40 to 75 without line 64's smallest width, which
-/// is <see cref="MinWidth"/>, and without lines 67 to 69's text, which row TS1 gives; the focus-visible state of lines 105 to 114, of which only the
+/// is <see cref="MinWidth"/>, and without lines 67 to 69's text, which <see cref="Fluent.Button"/> writes on the row around the
+/// content from <see cref="FluentTypography.Body1Strong"/>; the focus-visible state of lines 105 to 114, of which only the
 /// border's color is drawn; the primary lines 151 to 166; the disabled lines 322 to 369 and 420 to 430), read through the theme's
 /// tokens.
 /// </summary>

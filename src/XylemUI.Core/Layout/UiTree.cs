@@ -11,7 +11,7 @@ namespace XylemUI;
 /// <remarks>
 /// It belongs to the UI thread. Structure changes go through these methods, so that versions and dirty flags stay right.
 /// </remarks>
-internal sealed class UiTree
+internal sealed partial class UiTree
 {
     private readonly Comparison<LayoutRequest> _shallowestFirst;
     private readonly List<LayoutRequest> _deferred = [];
@@ -1052,11 +1052,14 @@ internal sealed class UiTree
     /// </summary>
     /// <param name="style">The layout style.</param>
     /// <param name="textStyle">The text style.</param>
+    /// <param name="own">The fields of <paramref name="textStyle"/> that are the leaf's own (design §3.2, "The text style a container
+    /// gives"): every field by default, so that the leaf takes nothing from its ancestors. The other fields take their ancestors'
+    /// values when the leaf is put in the tree, or the defaults of text, which they hold until then.</param>
     /// <returns>The leaf.</returns>
     /// <exception cref="InvalidOperationException">The tree has no <see cref="TextContext"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The text style's size or line height is out of its range.</exception>
     /// <exception cref="ArgumentException">The text style's language is the default value.</exception>
-    public NodeHandle CreateTextNode(LayoutStyle style, TextStyle textStyle)
+    public NodeHandle CreateTextNode(LayoutStyle style, TextStyle textStyle, TextStyleFields own = TextStyleFields.All)
     {
         if (Text is null)
         {
@@ -1065,7 +1068,9 @@ internal sealed class UiTree
 
         TextStyle.Validate(in textStyle, nameof(textStyle));
         NodeHandle handle = CreateNode(style);
-        Nodes.GetRef(handle).Text = new TextLeaf(textStyle);
+        ref UiNode created = ref Nodes.GetRef(handle);
+        created.Text = new TextLeaf(textStyle);
+        created.TextOwnFields = own;
         return handle;
     }
 
@@ -1085,8 +1090,9 @@ internal sealed class UiTree
     }
 
     /// <summary>
-    /// Replaces the text style of a text leaf. A style equal to the one there changes nothing; another drops the leaf's caches and
-    /// marks its layout, as a change of content (row L5).
+    /// Replaces the text style of a text leaf, every field of it as the leaf's own: the leaf takes nothing from its ancestors after
+    /// (design §3.2, "The text style a container gives"), and its line height stays the multiple given. A style equal to the one
+    /// there changes nothing; another drops the leaf's caches and marks its layout, as a change of content (row L5).
     /// </summary>
     /// <param name="node">The text leaf.</param>
     /// <param name="style">The text style.</param>
@@ -1096,7 +1102,37 @@ internal sealed class UiTree
     public void SetTextStyle(NodeHandle node, TextStyle style)
     {
         TextStyle.Validate(in style, nameof(style));
-        if (TextLeafOf(node).SetStyle(style))
+        TextLeaf leaf = TextLeafOf(node);
+        Nodes.GetRef(node).TextOwnFields = TextStyleFields.All;
+        if (_textStyles is { OwnLineHeights.Count: > 0 } tables)
+        {
+            _ = tables.OwnLineHeights.Remove(node);
+        }
+
+        if (leaf.SetStyle(style))
+        {
+            Invalidation.Invalidate(this, node, ChangeKind.Font);
+        }
+    }
+
+    /// <summary>
+    /// Sets the language of a text leaf's text, which chooses its fonts (design §4.5), as its own: a change of the locale no longer
+    /// gives it another (design §4.11). The same language changes nothing; another drops the leaf's caches and marks its layout.
+    /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <param name="language">The language.</param>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    /// <exception cref="ArgumentException"><paramref name="language"/> is the default value.</exception>
+    internal void SetTextLanguage(NodeHandle node, TextLanguage language)
+    {
+        TextLeaf leaf = Nodes.GetRef(node).Text ?? throw new InvalidOperationException("Only a text node has a language.");
+        if (language.Handle == 0)
+        {
+            throw new ArgumentException("The language is the default value; use TextLanguage.FromTag.", nameof(language));
+        }
+
+        leaf.DefaultLanguageOf = null;
+        if (leaf.SetStyle(leaf.Style with { Language = language }))
         {
             Invalidation.Invalidate(this, node, ChangeKind.Font);
         }
@@ -2132,6 +2168,7 @@ internal sealed class UiTree
             SetDisabledStates(child, inherited: true);
         }
 
+        TextStyleAttached(parent, child);
         Invalidation.MarkChildrenChanged(this, parent);
 
         // The subtree is in the order of Tab now, and a route that was read from inside it goes on through the parent: a menu's
@@ -2201,6 +2238,7 @@ internal sealed class UiTree
             SetDisabledStates(child, inherited: true);
         }
 
+        TextStyleAttached(parent, child);
         Invalidation.MarkChildrenChanged(this, parent);
         Actions.LinkChanged(child);
         NoteAttached(child);
@@ -2229,6 +2267,7 @@ internal sealed class UiTree
         }
 
         Detach(parent, previous, node, n.Layout.Style.IsInFlow);
+        TextStyleDetached(parent, node);
         Invalidation.MarkChildrenChanged(this, parent);
     }
 
@@ -2250,6 +2289,7 @@ internal sealed class UiTree
         }
 
         Detach(parent, previous, node, Nodes.GetRef(node).Layout.Style.IsInFlow);
+        TextStyleDetached(parent, node);
         InsertAfter(parent, previous, replacement);
     }
 
@@ -2261,6 +2301,9 @@ internal sealed class UiTree
     internal void DetachChildren(NodeHandle parent)
     {
         NodeHandle child = Nodes.GetRef(parent).FirstChild;
+
+        // What the children took from the parent's text styles, kept for each (TextStyleDetached), read once for them all.
+        bool keepsTextStyle = TakesTextStyle(parent, out InheritedTextStyle given);
 
         // A child that a reader's route passes, or else the first child: the one the readers are told of (LinkChanged).
         NodeHandle told = default;
@@ -2275,6 +2318,11 @@ internal sealed class UiTree
             }
 
             c.NextSibling = default;
+            if (keepsTextStyle)
+            {
+                _textStyles!.Detached[child] = given;
+            }
+
             child = next;
         }
 
@@ -2883,6 +2931,7 @@ internal sealed class UiTree
             SelectionAreas--;
         }
 
+        _textStyles?.Forget(node, (Nodes.GetRef(node).TextStyleMarks & TextStyleMarks.Holds) != 0);
         Nodes.Free(node);
     }
 
