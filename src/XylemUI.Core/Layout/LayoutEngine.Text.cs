@@ -104,7 +104,7 @@ internal static partial class LayoutEngine
             return shaped;
         }
 
-        TextStyle style = leaf.Style;
+        TextStyleKey style = leaf.Style;
         ReadOnlySpan<char> text = leaf.Text;
         if (text.IsEmpty)
         {
@@ -370,7 +370,7 @@ internal static partial class LayoutEngine
     {
         // The style is read once: the lines of a leaf with no inline objects take the fonts' metrics alone, as before row T13. Read
         // for each line, the miss of a wrapped leaf in resize-text was 10.53 to 11.08 ms against main's 9.02 to 9.99.
-        TextStyle style = leaf.Style;
+        TextStyleKey style = leaf.Style;
         TextRanges? rooms = leaf.Ranges is { HasInlines: true } ranges ? ranges : null;
         result.Wrap(entry.Width, context.Shaper, entry.Lines);
         result.Lay(entry.Lines, context.Shaper, entry.Layout);
@@ -417,7 +417,7 @@ internal static partial class LayoutEngine
     // A line with the rooms of the inline objects on it, which it grows to hold (SkParagraph's TextLine metrics, src/Run.h lines 432
     // to 443). Apart from the lines of the other leaves, which take none of it.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static (float Height, float Baseline) RoomLine(TextRanges ranges, ShapingResult result, LineSpan span, in TextStyle style)
+    private static (float Height, float Baseline) RoomLine(TextRanges ranges, ShapingResult result, LineSpan span, in TextStyleKey style)
     {
         LineMetrics metrics = LineMetricsOf(result, span);
         (float height, float baseline) = Line(metrics, style);
@@ -441,7 +441,7 @@ internal static partial class LayoutEngine
     // The height of a line and its baseline from its top. The fonts' line gap is split half above and half below (half-leading).
     // A line height of the style replaces the fonts' height: the factor times the largest size on the line (design §4.8), and the
     // difference with ascent and descent is split the same way.
-    private static (float Height, float Baseline) Line(LineMetrics metrics, in TextStyle style)
+    private static (float Height, float Baseline) Line(LineMetrics metrics, in TextStyleKey style)
     {
         float content = metrics.Ascent + metrics.Descent;
         float height = float.IsNaN(style.LineHeight) ? content + metrics.LineGap : metrics.Size * style.LineHeight;

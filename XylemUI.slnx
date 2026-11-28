@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/XylemUI.Benchmarks/XylemUI.Benchmarks.csproj" />
     <Project Path="benchmarks/XylemUI.E2E/XylemUI.E2E.csproj" />
   </Folder>
   <Folder Name="/samples/">

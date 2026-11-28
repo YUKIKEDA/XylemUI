@@ -16,6 +16,7 @@ public readonly ref struct DrawingContext
     private readonly DisplayList _list;
     private readonly NodeHandle _node;
     private readonly WindowFrames? _frames;
+    private readonly Color _text;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DrawingContext"/> struct for a node.
@@ -24,11 +25,14 @@ public readonly ref struct DrawingContext
     /// <param name="node">The node drawn, whose hit regions it writes.</param>
     /// <param name="frames">The window's frames, whose tree's text tools and glyph atlas lay out and draw a <see cref="TextLayout"/>;
     /// <see langword="null"/> for a context with no window, which draws no text layout.</param>
-    internal DrawingContext(DisplayList list, NodeHandle node, WindowFrames? frames = null)
+    /// <param name="text">The text color the draw stage resolved for the node (its ancestors' and its own <c>Foreground</c> and
+    /// pseudo-states, design §5.0, "The color of text"), which a text layout whose style has no color is drawn in.</param>
+    internal DrawingContext(DisplayList list, NodeHandle node, WindowFrames? frames = null, Color text = default)
     {
         _list = list;
         _node = node;
         _frames = frames;
+        _text = text;
     }
 
     /// <summary>
@@ -57,7 +61,23 @@ public readonly ref struct DrawingContext
     }
 
     /// <summary>
-    /// Draws the lines <see cref="LayoutText"/> made last, with the top left of their box at a point.
+    /// Draws the lines <see cref="LayoutText"/> made last, with the top left of their box at a point, in the color of the layout's
+    /// style; a style with no color draws in the text color the node drawn resolves (its ancestors' and its own <c>Foreground</c>
+    /// and pseudo-states, design §5.0, "The color of text").
+    /// </summary>
+    /// <param name="layout">The text.</param>
+    /// <param name="x">The left edge, in logical pixels.</param>
+    /// <param name="y">The top edge.</param>
+    /// <exception cref="InvalidOperationException">The text was not laid out since it last changed, or the context has no window.</exception>
+    public void DrawText(TextLayout layout, float x, float y)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        DrawText(layout, x, y, layout.Leaf.Color ?? _text);
+    }
+
+    /// <summary>
+    /// Draws the lines <see cref="LayoutText"/> made last, with the top left of their box at a point, in a color given over the
+    /// style's.
     /// </summary>
     /// <param name="layout">The text.</param>
     /// <param name="x">The left edge, in logical pixels.</param>

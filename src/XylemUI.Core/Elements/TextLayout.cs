@@ -2,9 +2,9 @@ namespace XylemUI;
 
 /// <summary>
 /// Text that a draw function lays out and draws itself (design §3.2, "Text from a draw function"):
-/// <see cref="DrawingContext.LayoutText"/> shapes it and breaks it into lines at a width, and <see cref="DrawingContext.DrawText(TextLayout, float, float, Color)"/>
-/// draws those lines. Keep one per text across frames: it holds the two caches of a text node, so that the same content, style, and
-/// width allocate nothing.
+/// <see cref="DrawingContext.LayoutText"/> shapes it and breaks it into lines at a width, and <see cref="DrawingContext.DrawText(TextLayout, float, float)"/>
+/// draws those lines in the style's color. Keep one per text across frames: it holds the two caches of a text node, so that the same
+/// content, style, and width allocate nothing.
 /// </summary>
 public sealed class TextLayout
 {
@@ -19,7 +19,7 @@ public sealed class TextLayout
     {
         ArgumentNullException.ThrowIfNull(text);
         TextStyle.Validate(in style, nameof(style));
-        Leaf = new TextLeaf(style);
+        Leaf = new TextLeaf(in style);
         _ = Leaf.SetContent(text);
     }
 
@@ -46,7 +46,9 @@ public sealed class TextLayout
     }
 
     /// <summary>
-    /// Replaces the style; a style equal to the one there changes nothing. Lay it out again before drawing it.
+    /// Replaces the style; a style equal to the one there changes nothing. A style whose font, size, language, or line height
+    /// differs is laid out again before it is drawn; one whose color alone differs keeps its lines and their caches, and is drawn
+    /// in the new color.
     /// </summary>
     /// <param name="style">The style.</param>
     /// <exception cref="ArgumentOutOfRangeException">The size or the line height is out of its range.</exception>
@@ -54,7 +56,7 @@ public sealed class TextLayout
     public void SetStyle(TextStyle style)
     {
         TextStyle.Validate(in style, nameof(style));
-        if (Leaf.SetStyle(style))
+        if (Leaf.SetStyle(in style) == TextStyleChange.Layout)
         {
             Laid = false;
         }

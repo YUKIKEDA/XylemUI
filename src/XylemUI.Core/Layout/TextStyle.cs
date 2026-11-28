@@ -3,8 +3,8 @@ using XylemUI.Text;
 namespace XylemUI;
 
 /// <summary>
-/// What a text leaf's layout reads of its style (design §3.2, "Text leaves"): the font asked for, the size, the language, and the
-/// line height. The color is not here: a change of color needs no layout, and equal styles mean equal layouts.
+/// The style of a text leaf's text (design §3.2, "Text leaves"): the font asked for, the size, the language, the line height, and
+/// the color. A change of the color alone lays nothing out again; it only draws the text again.
 /// </summary>
 /// <param name="Font">The font asked for (design §4.5).</param>
 /// <param name="Size">The size in logical pixels per em; finite and greater than 0.</param>
@@ -13,7 +13,11 @@ namespace XylemUI;
 /// The line height as a multiple of <paramref name="Size"/>; <see cref="float.NaN"/> for the fonts' own (ascent, descent, and line
 /// gap). Finite and greater than 0 when given.
 /// </param>
-public readonly record struct TextStyle(FontRequest Font, float Size, TextLanguage Language, float LineHeight)
+/// <param name="Color">
+/// The color of the text; <see langword="null"/> for the color the ancestors resolve (their <c>Foreground</c> and pseudo-states,
+/// design §5.0, "The color of text").
+/// </param>
+public readonly record struct TextStyle(FontRequest Font, float Size, TextLanguage Language, float LineHeight, Color? Color = null)
 {
     /// <summary>
     /// Throws when a value is out of its range.

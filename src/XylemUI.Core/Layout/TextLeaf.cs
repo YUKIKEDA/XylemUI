@@ -11,8 +11,12 @@ internal sealed class TextLeaf
     /// <summary>
     /// Initializes a new instance of the <see cref="TextLeaf"/> class, with no text.
     /// </summary>
-    /// <param name="style">The style.</param>
-    public TextLeaf(TextStyle style) => Style = style;
+    /// <param name="style">The style: its key goes to <see cref="Style"/>, and its color to <see cref="Color"/>.</param>
+    public TextLeaf(in TextStyle style)
+    {
+        Style = TextStyleKey.Of(in style);
+        Color = style.Color;
+    }
 
     /// <summary>
     /// Gets the text's buffer: <see langword="null"/> until a text is written, then reused and grown only when a text needs more.
@@ -30,10 +34,10 @@ internal sealed class TextLeaf
     public ReadOnlySpan<char> Text => Buffer.AsSpan(0, Length);
 
     /// <summary>
-    /// Gets the style: the one the leaf takes, resolved from its own fields and its ancestors' (design §3.2, "The text style a
-    /// container gives"). The layout and the draw stage read it alone.
+    /// Gets the key of the style: the one the leaf takes, resolved from its own fields and its ancestors' (design §3.2, "The text
+    /// style a container gives"). The layout and the draw stage read it alone; the color is <see cref="Color"/>.
     /// </summary>
-    public TextStyle Style { get; private set; }
+    public TextStyleKey Style { get; private set; }
 
     /// <summary>
     /// Gets or sets the locale whose language the leaf has because it set none of its own (design §4.11, "The default language
@@ -43,9 +47,10 @@ internal sealed class TextLeaf
     public IReadOnlySignal<Locale>? DefaultLanguageOf { get; set; }
 
     /// <summary>
-    /// Gets or sets the leaf's own color for its text; <see langword="null"/> at first, which takes the color its ancestors resolve
-    /// (<see cref="NodeVisual.Foreground"/>, design §5.0, "Opacity, transforms, and pseudo-states"). It is no part of
-    /// <see cref="Style"/>: the layout does not read it.
+    /// Gets or sets the leaf's own color for its text; <see langword="null"/> for the color its ancestors resolve
+    /// (<see cref="NodeVisual.Foreground"/>, design §5.0, "Opacity, transforms, and pseudo-states"). It is the color of the
+    /// <see cref="TextStyle"/> last written, or the one set after it, whichever came last. It is no part of <see cref="Style"/>: the
+    /// layout does not read it.
     /// </summary>
     public Color? Color { get; set; }
 
@@ -176,11 +181,11 @@ internal sealed class TextLeaf
     }
 
     /// <summary>
-    /// Replaces the style. When it differs from the style there, both caches are dropped.
+    /// Replaces the key of the style, and keeps the color. When it differs from the key there, both caches are dropped.
     /// </summary>
-    /// <param name="style">The style.</param>
-    /// <returns><see langword="true"/> when the style changed.</returns>
-    public bool SetStyle(TextStyle style)
+    /// <param name="style">The key.</param>
+    /// <returns><see langword="true"/> when the key changed.</returns>
+    public bool SetStyle(TextStyleKey style)
     {
         if (style == Style)
         {
@@ -190,6 +195,30 @@ internal sealed class TextLeaf
         Style = style;
         DropCaches();
         return true;
+    }
+
+    /// <summary>
+    /// Replaces the key of the style and the color with those of a whole style (design §3.2, row T15): a <see langword="null"/>
+    /// color takes the ancestors' again. When the key differs, both caches are dropped; when only the color does, they stay.
+    /// </summary>
+    /// <param name="style">The style.</param>
+    /// <returns>What changed.</returns>
+    public TextStyleChange SetStyle(in TextStyle style)
+    {
+        TextStyleChange change = TextStyleKey.Compare(Style, Color, in style);
+        if (change == TextStyleChange.Same)
+        {
+            return change;
+        }
+
+        Color = style.Color;
+        if (change == TextStyleChange.Layout)
+        {
+            Style = TextStyleKey.Of(in style);
+            DropCaches();
+        }
+
+        return change;
     }
 
     /// <summary>

@@ -927,7 +927,7 @@ public sealed class FluentTests
     // The weight, size, and line height (a multiple of the size) of a text's style.
     private static (int Weight, float Size, float LineHeight) Typography(HeadlessApp app, Element text)
     {
-        TextStyle style = app.Tree.Nodes.GetRef(text.Node).Text!.Style;
+        TextStyleKey style = app.Tree.Nodes.GetRef(text.Node).Text!.Style;
         return (style.Font.Weight.Value, style.Size, style.LineHeight);
     }
 

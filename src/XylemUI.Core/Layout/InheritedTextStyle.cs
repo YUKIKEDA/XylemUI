@@ -82,17 +82,18 @@ internal struct InheritedTextStyle
     public readonly bool SameAs(in InheritedTextStyle other) => Fields == other.Fields && Covers(in other);
 
     /// <summary>
-    /// Returns the style a text leaf takes under this one (design §3.2, "The text style a container gives"): each field the leaf set
-    /// itself keeps the leaf's value, each other field this style sets takes this style's, and the rest take the defaults of text
-    /// (<see cref="Elements.DefaultFontSize"/>, <see cref="FontRequest.Default"/>, and the fonts' own line height). A line height in
-    /// logical pixels becomes a multiple of the size the leaf takes.
+    /// Returns the key of the style a text leaf takes under this one (design §3.2, "The text style a container gives"); the color
+    /// is no part of it (design §5.0, "The color of text"). Each field the leaf set itself keeps the leaf's value, each other field this
+    /// style sets takes this style's, and the rest take the defaults of text (<see cref="Elements.DefaultFontSize"/>,
+    /// <see cref="FontRequest.Default"/>, and the fonts' own line height). A line height in logical pixels becomes a multiple of the
+    /// size the leaf takes.
     /// </summary>
-    /// <param name="current">The leaf's style now, which holds its own values in the fields it set and its language.</param>
+    /// <param name="current">The key of the leaf's style now, which holds its own values in the fields it set and its language.</param>
     /// <param name="own">The fields the leaf set itself.</param>
     /// <param name="ownLineHeight">The line height the leaf set itself, in logical pixels; <see cref="float.NaN"/> when its own line
     /// height is the multiple in <paramref name="current"/> (a whole style written to it).</param>
-    /// <returns>The style.</returns>
-    public readonly TextStyle Resolve(in TextStyle current, TextStyleFields own, float ownLineHeight)
+    /// <returns>The key.</returns>
+    public readonly TextStyleKey Resolve(in TextStyleKey current, TextStyleFields own, float ownLineHeight)
     {
         FontRequest font = current.Font;
         TextStyleFields taken = Fields & ~own;
@@ -120,7 +121,7 @@ internal struct InheritedTextStyle
             (own & TextStyleFields.LineHeight) != 0 ? (float.IsNaN(ownLineHeight) ? current.LineHeight : ownLineHeight / size)
             : (taken & TextStyleFields.LineHeight) != 0 ? LineHeight / size
             : float.NaN;
-        return new TextStyle(new FontRequest(family, weight, slant, stretch), size, current.Language, lineHeight);
+        return new TextStyleKey(new FontRequest(family, weight, slant, stretch), size, current.Language, lineHeight);
     }
 
     // Copies the given fields of another style.

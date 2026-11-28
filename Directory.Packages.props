@@ -30,4 +30,8 @@
     <!-- The version of Microsoft.Testing.Platform that xunit.v3 brings (row Q5). -->
     <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="2.5.3" />
   </ItemGroup>
+  <ItemGroup Label="Benchmarks">
+    <!-- The micro-benchmarks of benchmarks/XylemUI.Benchmarks (.cursor/rules/bench.mdc); never in an app. -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+  </ItemGroup>
 </Project>

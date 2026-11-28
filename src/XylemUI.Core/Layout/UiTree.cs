@@ -1069,7 +1069,7 @@ internal sealed partial class UiTree
         TextStyle.Validate(in textStyle, nameof(textStyle));
         NodeHandle handle = CreateNode(style);
         ref UiNode created = ref Nodes.GetRef(handle);
-        created.Text = new TextLeaf(textStyle);
+        created.Text = new TextLeaf(in textStyle);
         created.TextOwnFields = own;
         return handle;
     }
@@ -1090,9 +1090,12 @@ internal sealed partial class UiTree
     }
 
     /// <summary>
-    /// Replaces the text style of a text leaf, every field of it as the leaf's own: the leaf takes nothing from its ancestors after
-    /// (design §3.2, "The text style a container gives"), and its line height stays the multiple given. A style equal to the one
-    /// there changes nothing; another drops the leaf's caches and marks its layout, as a change of content (row L5).
+    /// Replaces the text style of a text leaf, every field of it but the color as the leaf's own: the leaf takes nothing from its
+    /// ancestors after (design §3.2, "The text style a container gives"), and its line height stays the multiple given. The color
+    /// replaces the leaf's, as <see cref="SetTextColor"/> does, so the later of the two wins; a <see langword="null"/> color takes
+    /// the ancestors' again. A style equal to the one there changes nothing; one whose font, size, language, or line height
+    /// differs drops the leaf's caches and marks its layout, as a change of content (row L5); one whose color alone differs keeps
+    /// the caches and marks the leaf to be drawn again, with no layout (row T15).
     /// </summary>
     /// <param name="node">The text leaf.</param>
     /// <param name="style">The text style.</param>
@@ -1109,10 +1112,26 @@ internal sealed partial class UiTree
             _ = tables.OwnLineHeights.Remove(node);
         }
 
-        if (leaf.SetStyle(style))
+        TextStyleChange change = leaf.SetStyle(in style);
+        if (change != TextStyleChange.Same)
         {
-            Invalidation.Invalidate(this, node, ChangeKind.Font);
+            Invalidation.Invalidate(this, node, change == TextStyleChange.Layout ? ChangeKind.Font : ChangeKind.Color);
         }
+    }
+
+    /// <summary>
+    /// Returns the text style of a text leaf as <see cref="SetTextStyle"/> takes it (design §3.2, row T15): the font, size,
+    /// language, and line height the leaf takes, and its own color (<see cref="TextLeaf.Color"/>), so that a style read here,
+    /// changed by <c>with</c>, and written back keeps the color a <c>Foreground</c> or an earlier style gave the leaf.
+    /// </summary>
+    /// <param name="node">The text leaf.</param>
+    /// <returns>The style.</returns>
+    /// <exception cref="InvalidOperationException">The node is not a text leaf.</exception>
+    internal TextStyle TextStyleOf(NodeHandle node)
+    {
+        TextLeaf leaf = TextLeafOf(node);
+        TextStyleKey key = leaf.Style;
+        return new TextStyle(key.Font, key.Size, key.Language, key.LineHeight, leaf.Color);
     }
 
     /// <summary>
@@ -1343,7 +1362,8 @@ internal sealed partial class UiTree
 
     /// <summary>
     /// Sets a text leaf's own color for its text, or <see langword="null"/> to take the color its ancestors resolve; equal to the
-    /// one there, nothing changes. Another marks the leaf to be drawn again, with no layout.
+    /// one there, nothing changes. Another marks the leaf to be drawn again, with no layout. It writes the color
+    /// <see cref="SetTextStyle"/> writes, so the later of the two wins.
     /// </summary>
     /// <param name="node">The text leaf.</param>
     /// <param name="color">The text color, or <see langword="null"/>.</param>

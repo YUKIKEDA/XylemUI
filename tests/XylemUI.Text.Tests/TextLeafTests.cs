@@ -208,7 +208,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             TextLeaf text = tree.Nodes.GetRef(leaf).Text!;
 
             tree.SetText(leaf, "nn");
-            tree.SetTextStyle(leaf, text.Style);
+            tree.SetTextStyle(leaf, Style());
             Assert.True(IsLayoutClean(tree, leaf));
             Assert.True(text.Shaped!.Valid);
 
@@ -218,7 +218,7 @@ public sealed class TextLeafTests(UiThreadFixture ui) : IDisposable
             LayoutEngine.RunLayoutPass(tree);
             Assert.Equal(36.6f, tree.GetRect(leaf).Width, 3);
 
-            tree.SetTextStyle(leaf, text.Style with { Size = 40 });
+            tree.SetTextStyle(leaf, Style() with { Size = 40 });
             Assert.False(IsLayoutClean(tree, leaf));
             Assert.False(text.Shaped.Valid);
         });

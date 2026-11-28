@@ -168,8 +168,7 @@ public sealed class TextRangeLayoutTests(UiThreadFixture ui) : IDisposable
                         w.Write("\nn".AsSpan());
                     }
                 );
-                TextStyle style = scene.Tree.Nodes.GetRef(text.Node).Text!.Style;
-                scene.Tree.SetTextStyle(text.Node, style with { LineHeight = 2 });
+                scene.Tree.SetTextStyle(text.Node, scene.Tree.TextStyleOf(text.Node) with { LineHeight = 2 });
                 return text;
             });
 

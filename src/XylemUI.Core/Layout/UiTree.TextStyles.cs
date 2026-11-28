@@ -4,9 +4,9 @@ using XylemUI.Text;
 namespace XylemUI;
 
 /// <content>
-/// The text styles that containers give the text leaves below them (design §3.2, "The text style a container gives"). A leaf's
-/// <see cref="TextLeaf.Style"/> is resolved when the leaf is put in the tree and when a container's value changes, and the layout
-/// and the draw stage read nothing else: no frame does more work for it.
+/// The text styles that containers give the text leaves below them (design §3.2, "The text style a container gives"). The key of a
+/// leaf's style (<see cref="TextLeaf.Style"/>) is resolved when the leaf is put in the tree and when a container's value changes,
+/// and the layout and the draw stage read nothing else: no frame does more work for it.
 /// </content>
 internal sealed partial class UiTree
 {
@@ -59,7 +59,7 @@ internal sealed partial class UiTree
     private void SetOwnTextStyle(NodeHandle node, TextLeaf leaf, in InheritedTextStyle value)
     {
         TextStyleFields fields = value.Fields;
-        TextStyle current = leaf.Style;
+        TextStyleKey current = leaf.Style;
         FontRequest font = current.Font;
         var own = new InheritedTextStyle
         {
@@ -84,7 +84,12 @@ internal sealed partial class UiTree
             (_textStyles ??= new TextStyleTables()).OwnLineHeights[node] = value.LineHeight;
         }
 
-        var written = new TextStyle(new FontRequest(own.Family, own.Weight, own.Slant, own.Stretch), own.Size, current.Language, current.LineHeight);
+        var written = new TextStyleKey(
+            new FontRequest(own.Family, own.Weight, own.Slant, own.Stretch),
+            own.Size,
+            current.Language,
+            current.LineHeight
+        );
         if (leaf.SetStyle(OuterTextStyleOf(node).Resolve(in written, owner.TextOwnFields, OwnLineHeightOf(node))))
         {
             Invalidation.Invalidate(this, node, ChangeKind.Font);
