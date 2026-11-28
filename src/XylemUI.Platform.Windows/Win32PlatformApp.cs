@@ -75,7 +75,8 @@ internal sealed class Win32PlatformApp : IPlatformApp
 
     /// <inheritdoc />
     /// <remarks>
-    /// Read when the host is made, and again on each <c>WM_SETTINGCHANGE</c> and <c>WM_SYSCOLORCHANGE</c> the host's window receives.
+    /// Read when the host is made, and again on each <c>WM_SETTINGCHANGE</c>, <c>WM_SYSCOLORCHANGE</c>, and
+    /// <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> the host's window receives.
     /// </remarks>
     public IPlatformSettings Settings => _settings;
 

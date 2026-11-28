@@ -470,9 +470,113 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             Assert.Null(core.Tree.TextInput);
         });
 
+    /// <summary>
+    /// <c>SetDarkTitleBar</c> sets the window's <c>DWMWA_USE_IMMERSIVE_DARK_MODE</c> (design §13.2, "題名の棒"), which DWM gives
+    /// back as it was set.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A core mounted in a hidden window on WARP, with a box.
+    ///
+    /// Steps:
+    /// - Make the title bar dark and read the attribute with <c>DwmGetWindowAttribute</c>; make it light and read it again.
+    ///
+    /// Expected:
+    /// - Both reads succeed and give TRUE, then FALSE.
+    /// </remarks>
+    [Fact]
+    public void SetDarkTitleBar_SetsTheImmersiveDarkModeAttribute() =>
+        ui.Invoke(() =>
+        {
+            (WindowCore core, Win32PlatformWindow window) = Open(Elements.Box);
+            using (core)
+            {
+                window.SetDarkTitleBar(true);
+                (int Result, bool Dark) afterDark = ReadDarkTitleBar(window.Window);
+                window.SetDarkTitleBar(false);
+                (int Result, bool Dark) afterLight = ReadDarkTitleBar(window.Window);
+
+                Assert.Equal((0, true), afterDark);
+                Assert.Equal((0, false), afterLight);
+            }
+        });
+
+    /// <summary>
+    /// A change of Windows' appearance reaches the window's paint through the whole host (design §13.2): the message reads the
+    /// settings again, the core gives the tree the appearance, the root wrapper's effect tells the window's surface, and the host
+    /// paints the backdrop behind the tree and sets the title bar; the window's creation paints the values of that time.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - An appearance reader set by the test, put back after it, that returns light. A core mounted in a hidden window on WARP with
+    ///   a wrapper whose effect tells the surface #292929 and a dark title bar when the OS's appearance is dark, and #FAFAFA and a
+    ///   light one when it is light.
+    ///
+    /// Steps:
+    /// - Read the frames' color and the title bar's attribute. Make the reader return dark, send
+    ///   <c>WM_DWMCOLORIZATIONCOLORCHANGED</c>, and read them again.
+    ///
+    /// Expected:
+    /// - At the creation: #FAFAFA and FALSE. After the message: #292929 and TRUE.
+    /// </remarks>
+    [Fact]
+    public void AppearanceMessage_ReachesTheBackdropAndTheTitleBar() =>
+        ui.Invoke(() =>
+        {
+            Func<SystemAppearance, SystemAppearance> previous = Win32PlatformSettings.AppearanceReader;
+            try
+            {
+                SystemAppearance current = default;
+                Win32PlatformSettings.AppearanceReader = _ => current;
+                Color darkBackdrop = Color.FromRgb(0x292929);
+                Color lightBackdrop = Color.FromRgb(0xFAFAFA);
+                (WindowCore core, Win32PlatformWindow window) = Open(Elements.Box, wrapper: Wrap);
+                using (core)
+                {
+                    (Color Backdrop, (int Result, bool Dark) Bar) created = (core.Frames.ClearColor, ReadDarkTitleBar(window.Window));
+                    current = new SystemAppearance(ColorScheme.Dark, false, null, null);
+
+                    _ = SendMessageW(window.Window.Hwnd, WM.WM_DWMCOLORIZATIONCOLORCHANGED, default, default);
+
+                    Assert.Equal((lightBackdrop, (0, false)), created);
+                    Assert.Equal((darkBackdrop, (0, true)), (core.Frames.ClearColor, ReadDarkTitleBar(window.Window)));
+                }
+
+                Element Wrap(Func<Element> root)
+                {
+                    IReadOnlySignal<SystemAppearance> appearance = SystemAppearance.Current.Use();
+                    WindowSurface surface = WindowSurface.Current.Use();
+                    _ = Effect.Create(() =>
+                    {
+                        bool dark = appearance.Get().Scheme == ColorScheme.Dark;
+                        surface.SetBackdrop(dark ? darkBackdrop : lightBackdrop);
+                        surface.SetDarkTitleBar(dark);
+                    });
+                    return root();
+                }
+            }
+            finally
+            {
+                Win32PlatformSettings.AppearanceReader = previous;
+            }
+        });
+
+    // Reads the window's DWMWA_USE_IMMERSIVE_DARK_MODE back: the HRESULT, and whether it is TRUE.
+    private static unsafe (int Result, bool Dark) ReadDarkTitleBar(Win32Window window)
+    {
+        BOOL value;
+        int result = DwmGetWindowAttribute(window.Hwnd, (uint)DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, &value, (uint)sizeof(BOOL));
+        return (result, value != BOOL.FALSE);
+    }
+
     // Opens a core's window as XylemApp does (design §6.0, "The order of creation", steps 4 to 7): hidden, on WARP, with a tree that
-    // holds no text, and settings of its own, read now. The core owns the window and the atlas; the caller disposes it.
-    private static (WindowCore Core, Win32PlatformWindow Window) Open(Func<Element> root, IReadOnlyList<LocaleData>? supported = null)
+    // holds no text, settings of its own, read now, and their appearance; the root function in the wrapper given, if any. The core
+    // owns the window and the atlas; the caller disposes it.
+    private static (WindowCore Core, Win32PlatformWindow Window) Open(
+        Func<Element> root,
+        IReadOnlyList<LocaleData>? supported = null,
+        Func<Func<Element>, Element>? wrapper = null
+    )
     {
         var settings = new Win32PlatformSettings();
         var core = new WindowCore(null, settings, null, supported, null);
@@ -496,7 +600,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
             var size = new Size(width / scale, height / scale);
-            core.Mount(root, null, default, "Win32PlatformWindowTests", size, scale);
+            core.Mount(root, wrapper, settings.Appearance, "Win32PlatformWindowTests", size, scale);
             window.RootMounted();
             return (core, window);
         }

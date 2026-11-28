@@ -127,12 +127,12 @@ public static class XylemApp
 
             // The root function in the theme's wrapper the app chose (design §13.2, "根で置くもの"), then the first frame at the
             // window's size in logical pixels: the host's physical size divided by its scale (design §6.0, "The order of creation",
-            // step 7). The OS's appearance is the one of a host that does not read it, until row TH1's fifth pull request reads
-            // Windows' (design §13.2, "macOS と Linux").
+            // step 7). The OS's appearance is the app tier's settings', which the host read again when it opened the window (design
+            // §13.2, "OS の見た目").
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;
             var size = new Size(width / scale, height / scale);
-            core.Mount(root, WindowRoot.ReadWrapper(), default, "XylemApp.Run", size, scale);
+            core.Mount(root, WindowRoot.ReadWrapper(), app.Settings.Appearance, "XylemApp.Run", size, scale);
 
             // The tree has its root now: assistive technology that asked while the window showed gets the tree.
             window.RootMounted();

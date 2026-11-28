@@ -117,21 +117,21 @@ public sealed class XylemAppTests(UiThreadFixture ui)
 
     /// <summary>
     /// A desktop window runs its root function in the process's root wrapper (<see cref="WindowRoot.SetWrapper"/>), which runs
-    /// inside the locale, the OS's appearance, and the window's surface; until row TH1's fifth pull request reads Windows, the
-    /// appearance is the one of a host that does not read the OS.
+    /// inside the locale, the OS's appearance the host's settings read, and the window's surface (design §13.2, "OS の見た目").
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The process's wrapper is <c>TestRootWrapper.Wrap</c>, set by the test assembly's module initializer; it runs the root
     ///   function as it is unless a test gives it a wrapper of its own. This test gives one that records what it finds and that it
     ///   runs the root function, and takes it back after the window opened.
+    /// - An appearance reader set by the test, put back after it, that returns dark with the accent #0078D4.
     ///
     /// Steps:
     /// - Open a hidden window whose root function records what it finds and returns a box.
     ///
     /// Expected:
-    /// - The log is "wrap", "root", "wrapped". The wrapper found a locale, the default appearance (light, high contrast off, no
-    ///   accent color), and the window's own surface: the same object as its core's. The box is the window's node.
+    /// - The log is "wrap", "root", "wrapped". The wrapper found a locale, the appearance the reader returned, and the window's own
+    ///   surface: the same object as its core's. The box is the window's node.
     /// </remarks>
     [Fact]
     public void OpenWindow_TheProcessWrapper_RunsInsideTheRootValues() =>
@@ -157,6 +157,9 @@ public sealed class XylemAppTests(UiThreadFixture ui)
                 log.Add("wrapped");
                 return made;
             };
+            var dark = new SystemAppearance(ColorScheme.Dark, false, Color.FromRgb(0x0078D4), null);
+            Func<SystemAppearance, SystemAppearance> previousReader = Win32PlatformSettings.AppearanceReader;
+            Win32PlatformSettings.AppearanceReader = _ => dark;
             TestWindow window;
             try
             {
@@ -165,6 +168,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
             finally
             {
                 TestRootWrapper.Inner = null;
+                Win32PlatformSettings.AppearanceReader = previousReader;
             }
 
             using (window)
@@ -172,7 +176,7 @@ public sealed class XylemAppTests(UiThreadFixture ui)
                 string[] expected = ["wrap", "root", "wrapped"];
                 Assert.Equal(expected, log);
                 Assert.True(locale);
-                Assert.Equal(new SystemAppearance(ColorScheme.Light, false, null, null), appearance);
+                Assert.Equal(dark, appearance);
                 Assert.Same(window.Core.Surface, surface);
                 Assert.Equal(window.Core.RootNode, window.Tree.Nodes.GetRef(box.Node).Parent);
             }

@@ -91,16 +91,18 @@ internal sealed class WindowCore : IDisposable
 
     /// <summary>
     /// Gets the window's surface, which the core provides at the root under <see cref="WindowSurface.Current"/>: what the root
-    /// wrapper set last of the color behind the tree and of the title bar.
+    /// wrapper set last of the color behind the tree and of the title bar. From <see cref="Connect"/> until the root is disposed, a
+    /// value that differs from the last one is painted: the color as the frames' <see cref="WindowFrames.ClearColor"/>, and the
+    /// title bar through <see cref="IPlatformWindow.SetDarkTitleBar"/> (design §13.2, "根の箱" and "題名の棒").
     /// </summary>
     public WindowSurface Surface { get; } = new();
 
     /// <summary>
     /// Makes the window's frames and input from the window's target, scheduler, and pointer platform, and gives them the window's
     /// values now: whether it shows, whether it is active, and how its text is drawn; then gives the tree the window's input method
-    /// and the OS's settings now, less motion and the text fields' settings, and follows the settings' changes from here on. The
-    /// frames ask the window's scheduler for a frame whenever the tree queues work. The core owns the window and the atlas from this
-    /// call on, also when it throws.
+    /// and the OS's settings now, less motion and the text fields' settings, follows the settings' changes from here on, and paints
+    /// what the window's surface is told from here on. The frames ask the window's scheduler for a frame whenever the tree queues
+    /// work. The core owns the window and the atlas from this call on, also when it throws.
     /// </summary>
     /// <param name="window">The window tier.</param>
     /// <param name="atlas">The glyph atlas the target draws glyphs from.</param>
@@ -129,6 +131,9 @@ internal sealed class WindowCore : IDisposable
         Tree.Animations.ReduceMotion = _settings.ReducesMotion;
         Tree.SetTextEditing(_settings.TextEditing);
         _settings.Changed += _onSettingsChanged;
+
+        // The root wrapper tells the surface its values from Mount on (design §13.2, "根の箱" and "題名の棒").
+        Surface.Bind(Frames.SetClearColor, window.SetDarkTitleBar);
     }
 
     /// <summary>
@@ -252,10 +257,10 @@ internal sealed class WindowCore : IDisposable
     }
 
     /// <summary>
-    /// Stops the tree from asking for frames and from following the OS's settings, disposes the root scope, and lets go of the
-    /// images the tree's cache kept. It may be called more than once, and before <see cref="Connect"/>. It does not cancel a frame
-    /// already asked for, so that the headless app can run the frames left after it (<c>AssertNoLeakedScopes</c>);
-    /// <see cref="WindowClosed"/> and <see cref="Dispose"/> cancel it.
+    /// Stops the tree from asking for frames, from following the OS's settings, and from painting what the window's surface is
+    /// told, disposes the root scope, and lets go of the images the tree's cache kept. It may be called more than once, and before
+    /// <see cref="Connect"/>. It does not cancel a frame already asked for, so that the headless app can run the frames left after
+    /// it (<c>AssertNoLeakedScopes</c>); <see cref="WindowClosed"/> and <see cref="Dispose"/> cancel it.
     /// </summary>
     public void DisposeRoot()
     {
@@ -263,6 +268,9 @@ internal sealed class WindowCore : IDisposable
 
         // The settings are the app's and outlive the window: a change after it closed reaches no tree of it.
         _settings.Changed -= _onSettingsChanged;
+
+        // An app may keep the surface past its window: what it is told then reaches no window that closed.
+        Surface.Bind(null, null);
         if (!_rootScope.IsNone && Scope.IsAlive(_rootScope))
         {
             Scope.Dispose(_rootScope);
@@ -326,7 +334,8 @@ internal sealed class WindowCore : IDisposable
     }
 
     // A reading of the OS's settings changed the values it marks (design §6.0, "OS settings"): each goes where the tree reads it, and
-    // the values it does not mark stay. Before Mount there is no locale yet: Mount takes the languages and the 24-hour form then.
+    // the values it does not mark stay. Before Mount there is no locale or appearance yet: Mount takes the languages and the 24-hour
+    // form then, and the appearance its caller gives.
     // Every marked value is given, also after one throws (an effect the locale runs, say); the exceptions are thrown together at
     // the end, as SynchronousRenderGuard runs its deferred callbacks.
     private void OnSettingsChanged(PlatformSettingsChanges changes)
@@ -377,6 +386,18 @@ internal sealed class WindowCore : IDisposable
             catch (Exception formError)
             {
                 (errors ??= []).Add(formError);
+            }
+        }
+
+        if ((changes & PlatformSettingsChanges.Appearance) != 0)
+        {
+            try
+            {
+                SetSystemAppearance(_settings.Appearance);
+            }
+            catch (Exception appearanceError)
+            {
+                (errors ??= []).Add(appearanceError);
             }
         }
 

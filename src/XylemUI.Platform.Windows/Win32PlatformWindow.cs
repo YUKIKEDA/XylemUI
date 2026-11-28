@@ -1,5 +1,7 @@
+using TerraFX.Interop.Windows;
 using XylemUI.Rendering.D3D11;
 using XylemUI.Text;
+using static TerraFX.Interop.Windows.Windows;
 
 namespace XylemUI.Platform.Windows;
 
@@ -12,9 +14,9 @@ namespace XylemUI.Platform.Windows;
 /// <remarks>
 /// It belongs to the UI thread. It makes its parts in the order the design gives (window, provider, show, renderer, clock, TSF), and
 /// disposes them in the order the desktop window had: TSF lets go of the window before it is destroyed, the provider goes before
-/// the window, and the loop stops waiting on the clock before the renderer closes it. The window's <c>WM_SETTINGCHANGE</c> and
-/// <c>WM_SYSCOLORCHANGE</c> read the app tier's settings again (<see cref="Win32PlatformSettings"/>, design §6.0, "OS settings"),
-/// which tell the window cores themselves.
+/// the window, and the loop stops waiting on the clock before the renderer closes it. The window's <c>WM_SETTINGCHANGE</c>,
+/// <c>WM_SYSCOLORCHANGE</c>, and <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> read the app tier's settings again
+/// (<see cref="Win32PlatformSettings"/>, design §6.0, "OS settings"), which tell the window cores themselves.
 /// </remarks>
 internal sealed class Win32PlatformWindow : IPlatformWindow
 {
@@ -170,6 +172,21 @@ internal sealed class Win32PlatformWindow : IPlatformWindow
 
     /// <inheritdoc/>
     public void RequestClose() => Window.RequestClose();
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Sets <c>DWMWA_USE_IMMERSIVE_DARK_MODE</c> (20), which builds from 22000 take (Microsoft's "DWMWINDOWATTRIBUTE"); spike #888
+    /// read the value back and saw the bar turn <c>#1E2024</c> on Windows 11 26300 (design §13.2, "題名の棒").
+    /// </remarks>
+    /// <exception cref="InvalidOperationException"><c>DwmSetWindowAttribute</c> failed; the result is in
+    /// <see cref="Exception.HResult"/>.</exception>
+    public unsafe void SetDarkTitleBar(bool dark)
+    {
+        // The call reads the local value, whose size it is given.
+        BOOL value = dark ? BOOL.TRUE : BOOL.FALSE;
+        int result = DwmSetWindowAttribute(Window.Hwnd, (uint)DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, &value, (uint)sizeof(BOOL));
+        Com.ThrowIfFailed(result, "DwmSetWindowAttribute");
+    }
 
     /// <summary>
     /// Takes the notices back from the core and the settings, lets TSF go of the window, takes the provider out, destroys the window,

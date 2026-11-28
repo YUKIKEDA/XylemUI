@@ -24,6 +24,7 @@ public sealed unsafe partial class Win32Window : IDisposable
     private const uint WmSize = WM.WM_SIZE;
     private const uint WmSettingChange = WM.WM_SETTINGCHANGE;
     private const uint WmSysColorChange = WM.WM_SYSCOLORCHANGE;
+    private const uint WmDwmColorizationColorChanged = WM.WM_DWMCOLORIZATIONCOLORCHANGED;
     private const uint WmDpiChanged = WM.WM_DPICHANGED;
     private const uint WmWindowPosChanged = WM.WM_WINDOWPOSCHANGED;
     private const uint Style = WS.WS_OVERLAPPEDWINDOW;
@@ -149,10 +150,10 @@ public sealed unsafe partial class Win32Window : IDisposable
     public event EventHandler? TextRenderingChanged;
 
     /// <summary>
-    /// Gets or sets what reads the app tier's OS settings again when the window receives <c>WM_SETTINGCHANGE</c> or
-    /// <c>WM_SYSCOLORCHANGE</c> (design §6.0, "OS settings"); <see langword="null"/> for nothing. Windows sends the two messages to
-    /// every top-level window, and none to a message-only window. It is called inside the message, after the window read how its
-    /// text is drawn again.
+    /// Gets or sets what reads the app tier's OS settings again when the window receives <c>WM_SETTINGCHANGE</c>,
+    /// <c>WM_SYSCOLORCHANGE</c>, or <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> (design §6.0, "OS settings"; §13.2, "読み直す時");
+    /// <see langword="null"/> for nothing. Windows sends the three messages to every top-level window, and none to a message-only
+    /// window. It is called inside the message; for <c>WM_SETTINGCHANGE</c>, after the window read how its text is drawn again.
     /// </summary>
     internal Action? SettingsMessageReceived { get; set; }
 
@@ -535,7 +536,13 @@ public sealed unsafe partial class Win32Window : IDisposable
                 SettingsMessageReceived?.Invoke();
                 return false;
             case WmSysColorChange:
-                // The selection's colors are system colors (design §4.9, "Drawing the selection").
+                // The selection's colors are system colors (design §4.9, "Drawing the selection"), and so are high contrast's
+                // (design §13.2, "読み直す時").
+                SettingsMessageReceived?.Invoke();
+                return false;
+            case WmDwmColorizationColorChanged:
+                // The accent color: this message came about 0.3 s before the first "ImmersiveColorSet" in spike #888, and the
+                // value read in it was already new (design §13.2, "読み直す時").
                 SettingsMessageReceived?.Invoke();
                 return false;
             case WmDpiChanged:

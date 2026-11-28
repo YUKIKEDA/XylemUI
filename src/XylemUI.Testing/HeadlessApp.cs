@@ -36,6 +36,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     private readonly UiDispatcher _dispatcher;
     private readonly HeadlessSettings _settings;
     private readonly WindowCore _core;
+    private readonly HeadlessWindow _window;
     private readonly bool _trackerWasEnabled;
     private readonly HashSet<int> _scopesBefore = [];
 
@@ -52,7 +53,6 @@ public sealed class HeadlessApp : IAsyncDisposable
         _text = new TextContext(_fonts);
         _settings = new HeadlessSettings(options);
         _renderer = options.Renderer?.Invoke();
-        HeadlessWindow window;
         bool connected = false;
 
         // A renderer that fails to size, or a part made after it that throws, does not leave its device behind (PR #469's review).
@@ -69,12 +69,12 @@ public sealed class HeadlessApp : IAsyncDisposable
 
             // The headless parts as the window tier (design §6.0, "Headless"): from it the core gives the tree the input method, and
             // takes that the window shows and is active from the start. The core gives the tree the options' settings in Connect.
-            window = new HeadlessWindow(_target, _scheduler, _platform, Ime, options);
+            _window = new HeadlessWindow(_target, _scheduler, _platform, Ime, options);
 
             // The core owns the window and the atlas from Connect on, also when Connect throws (design §6.0).
             connected = true;
-            _core.Connect(window, _atlas, Color.FromRgb(0xFFFFFF), Time);
-            window.Attach();
+            _core.Connect(_window, _atlas, Color.FromRgb(0xFFFFFF), Time);
+            _window.Attach();
             Pointer = new HeadlessPointer(this);
             Keyboard = new HeadlessKeyboard(this);
         }
@@ -115,7 +115,7 @@ public sealed class HeadlessApp : IAsyncDisposable
             // assembly set for its desktop windows (WindowRoot) stays in the test process and is not read (design §13.2).
             var size = new Size(options.Width, options.Height);
             _core.Mount(root, options.RootWrapper, options.SystemAppearance, "HeadlessApp.StartAsync", size, options.Scale);
-            window.RootMounted();
+            _window.RootMounted();
         }
         catch
         {
@@ -194,9 +194,10 @@ public sealed class HeadlessApp : IAsyncDisposable
 
     /// <summary>
     /// Gets whether the root wrapper told the host last that the title bar is dark (<see cref="WindowSurface.SetDarkTitleBar"/>,
-    /// design §13.2, "題名の棒"); <see langword="null"/> before it told any.
+    /// design §13.2, "題名の棒"); <see langword="null"/> before it told any. It is what the window core gave the headless window,
+    /// as it gives a desktop window's title bar.
     /// </summary>
-    public bool? DarkTitleBar => _core.Surface.DarkTitleBar;
+    public bool? DarkTitleBar => _window.DarkTitleBar;
 
     /// <summary>
     /// Gets the tree.
@@ -561,7 +562,7 @@ public sealed class HeadlessApp : IAsyncDisposable
     public void SetSystemAppearance(SystemAppearance value)
     {
         VerifyRunning();
-        _core.SetSystemAppearance(value);
+        _settings.SetAppearance(value);
         _ = DrainQueue();
     }
 

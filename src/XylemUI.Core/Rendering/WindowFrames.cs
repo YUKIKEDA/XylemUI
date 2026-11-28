@@ -95,9 +95,9 @@ internal sealed partial class WindowFrames
     }
 
     /// <summary>
-    /// Gets the color behind the tree.
+    /// Gets the color behind the tree; <see cref="SetClearColor"/> replaces it.
     /// </summary>
-    public Color ClearColor { get; }
+    public Color ClearColor { get; private set; }
 
     /// <summary>
     /// Gets or sets how the window draws text: grayscale or ClearType, and bilevel where the OS does not smooth fonts (design
@@ -361,6 +361,20 @@ internal sealed partial class WindowFrames
         {
             _frameWanted = false;
             RequestFrame();
+        }
+    }
+
+    /// <summary>
+    /// Replaces the color behind the tree (design §13.2, "根の箱"): another color marks the root to be drawn again, so that the next
+    /// frame draws and presents with it; the same color does nothing.
+    /// </summary>
+    /// <param name="color">The color.</param>
+    public void SetClearColor(Color color)
+    {
+        if (color != ClearColor)
+        {
+            ClearColor = color;
+            Invalidation.Invalidate(_tree, _root, ChangeKind.Color);
         }
     }
 

@@ -78,4 +78,11 @@ internal interface IPlatformWindow : IDisposable
     /// Asks the window to close, as its close button does.
     /// </summary>
     void RequestClose();
+
+    /// <summary>
+    /// Makes the window's title bar dark or light (design §13.2, "題名の棒"). The window core calls it each time the root wrapper
+    /// tells the window's surface another value (<see cref="WindowSurface.SetDarkTitleBar"/>).
+    /// </summary>
+    /// <param name="dark"><see langword="true"/> for a dark title bar; <see langword="false"/> for a light one.</param>
+    void SetDarkTitleBar(bool dark);
 }

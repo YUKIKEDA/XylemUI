@@ -5,14 +5,15 @@ namespace XylemUI.Platform.Windows;
 
 /// <summary>
 /// The OS's settings of the Windows host (design §6.0, "OS settings"): one object of the app tier. It reads whether Windows asks for
-/// less motion, the settings a text field draws with, the user's preferred UI languages, and whether the short time format is in
-/// 24-hour form when it is made, and again on each <c>WM_SETTINGCHANGE</c> or <c>WM_SYSCOLORCHANGE</c> a window of the host receives
-/// (<see cref="ReadAgain"/>).
+/// less motion, the settings a text field draws with, the user's preferred UI languages, whether the short time format is in 24-hour
+/// form, and the OS's appearance when it is made, and again on each <c>WM_SETTINGCHANGE</c>, <c>WM_SYSCOLORCHANGE</c>, or
+/// <c>WM_DWMCOLORIZATIONCOLORCHANGED</c> a window of the host receives (<see cref="ReadAgain"/>).
 /// </summary>
 /// <remarks>
 /// The loop's message-only windows cannot receive these messages: a message-only window receives no broadcast message (Microsoft's
 /// "Window Features", "Message-Only Windows"). Windows sends them to every top-level window, so the first window to receive one reads
-/// the change, the others read the same values, and the change is told once.
+/// the change, the others read the same values, and the change is told once. One change of Windows' appearance sent up to 10 of them
+/// in spike #888; only the reading that finds another value tells it (design §13.2, "同じ値はまとめる").
 /// </remarks>
 internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
 {
@@ -32,6 +33,7 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
         TextEditing = TextEditingReader(TextEditingSettings.Default);
         _uiLanguages = UiLanguagesReader();
         Use24HourFormat = Use24HourFormatReader(false);
+        Appearance = AppearanceReader(default);
     }
 
     /// <inheritdoc/>
@@ -60,6 +62,12 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
     /// </remarks>
     public bool Use24HourFormat { get; private set; }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Read by <see cref="Win32Appearance.Read"/> (design §13.2, "Windows で読むもの").
+    /// </remarks>
+    public SystemAppearance Appearance { get; private set; }
+
     /// <summary>
     /// Gets or sets what reads <see cref="ReducesMotion"/> from the value before it, for the tests of the change without changing a
     /// setting of Windows.
@@ -84,9 +92,16 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
     internal static Func<bool, bool> Use24HourFormatReader { get; set; } = Win32TimeFormat.ReadUse24HourFormat;
 
     /// <summary>
+    /// Gets or sets what reads <see cref="Appearance"/> from the value before it, for the tests of the change without changing a
+    /// setting of Windows.
+    /// </summary>
+    internal static Func<SystemAppearance, SystemAppearance> AppearanceReader { get; set; } = Win32Appearance.Read;
+
+    /// <summary>
     /// Reads every setting again, and raises <see cref="IPlatformSettings.Changed"/> once, marked with the values that changed,
     /// when one did; through <see cref="SynchronousRenderGuard.RunOrDefer"/>, so that during a synchronous render it runs after the
-    /// render (design §2.11.1). A window of the host calls it on <c>WM_SETTINGCHANGE</c> and <c>WM_SYSCOLORCHANGE</c>.
+    /// render (design §2.11.1). A window of the host calls it on <c>WM_SETTINGCHANGE</c>, <c>WM_SYSCOLORCHANGE</c>, and
+    /// <c>WM_DWMCOLORIZATIONCOLORCHANGED</c>.
     /// </summary>
     /// <remarks>
     /// The setting the message names is not matched: the values come from several settings, the documentation does not say which
@@ -102,6 +117,7 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
         TextEditingSettings textEditing = TextEditingReader(TextEditing);
         string[] uiLanguages = UiLanguagesReader();
         bool use24HourFormat = Use24HourFormatReader(Use24HourFormat);
+        SystemAppearance appearance = AppearanceReader(Appearance);
 
         PlatformSettingsChanges changes = PlatformSettingsChanges.None;
         if (reducesMotion != ReducesMotion)
@@ -126,6 +142,12 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
         {
             Use24HourFormat = use24HourFormat;
             changes |= PlatformSettingsChanges.Use24HourFormat;
+        }
+
+        if (appearance != Appearance)
+        {
+            Appearance = appearance;
+            changes |= PlatformSettingsChanges.Appearance;
         }
 
         if (changes != PlatformSettingsChanges.None)
@@ -170,8 +192,12 @@ internal sealed unsafe class Win32PlatformSettings : IPlatformSettings
         );
     }
 
-    // A COLORREF is 0x00BBGGRR.
-    private static Color FromColorRef(uint colorRef) => new((byte)colorRef, (byte)(colorRef >> 8), (byte)(colorRef >> 16), 0xFF);
+    /// <summary>
+    /// Returns the opaque color of a <c>COLORREF</c>, which is <c>0x00BBGGRR</c>.
+    /// </summary>
+    /// <param name="colorRef">The <c>COLORREF</c>.</param>
+    /// <returns>The color.</returns>
+    internal static Color FromColorRef(uint colorRef) => new((byte)colorRef, (byte)(colorRef >> 8), (byte)(colorRef >> 16), 0xFF);
 
     private void Raise()
     {

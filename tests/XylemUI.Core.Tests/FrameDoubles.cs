@@ -13,6 +13,9 @@ internal static class FrameDoubles
         // The images the last frame was drawn with.
         public TextureCache? Images { get; private set; }
 
+        // The color behind the tree the last frame was drawn with.
+        public Color ClearColor { get; private set; }
+
         // Whether a draw takes the queued uploads as a renderer does, and the first byte of each image it took, in order.
         public bool TakesUploads { get; set; }
 
@@ -21,6 +24,7 @@ internal static class FrameDoubles
         public void Draw(ReadOnlySpan<DisplayList> lists, Color clearColor, GlyphAtlas atlas, TextureCache images)
         {
             Images = images;
+            ClearColor = clearColor;
             if (!TakesUploads)
             {
                 return;

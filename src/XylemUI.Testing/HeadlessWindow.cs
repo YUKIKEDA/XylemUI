@@ -49,6 +49,11 @@ internal sealed class HeadlessWindow(
     /// <inheritdoc/>
     public ITextInputPlatform? TextInput => ime;
 
+    /// <summary>
+    /// Gets the value the window core gave <see cref="SetDarkTitleBar"/> last; <see langword="null"/> before the first.
+    /// </summary>
+    public bool? DarkTitleBar { get; private set; }
+
     /// <inheritdoc/>
     /// <remarks>
     /// No OS sends notices: the tests call the core's input and frames through the app.
@@ -66,6 +71,12 @@ internal sealed class HeadlessWindow(
     /// Nothing: a headless window closes when the app is disposed.
     /// </remarks>
     public void RequestClose() { }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The headless window keeps the value, which <see cref="HeadlessApp.DarkTitleBar"/> shows.
+    /// </remarks>
+    public void SetDarkTitleBar(bool dark) => DarkTitleBar = dark;
 
     /// <inheritdoc/>
     /// <remarks>
