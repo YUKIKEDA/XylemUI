@@ -689,7 +689,7 @@ internal sealed partial class WindowFrames
 
         if (!hitsOnly && visual?.Draw is { } draw)
         {
-            CallDraw(draw, handle, box);
+            CallDraw(draw, handle, box, text);
         }
 
         ref UiNode after = ref _tree.Nodes.GetRef(handle);
@@ -889,15 +889,16 @@ internal sealed partial class WindowFrames
     // The user's draw function, apart from DrawNode so that only a node with one pays for the exception's frame. An exception goes to
     // the handler of unhandled exceptions, and the scopes the function left open are closed, so that the rest of the frame is drawn
     // and presented (design §5.0, "The draw function's exceptions"). Flutter reports a paint's exception and paints the siblings.
+    // The node's resolved text color goes in the context, for a text layout whose style has no color (row T15).
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void CallDraw(DrawFunc draw, NodeHandle handle, Rect box)
+    private void CallDraw(DrawFunc draw, NodeHandle handle, Rect box, Color text)
     {
         DisplayList list = _building;
         int depth = list.ScopeDepth;
         list.HitsSuppressed = _noHitDepth > 0;
         try
         {
-            draw(new DrawingContext(list, handle, this), box);
+            draw(new DrawingContext(list, handle, this, text), box);
         }
         catch (Exception exception) when (exception is not InvariantViolationException)
         {
@@ -964,7 +965,7 @@ internal sealed partial class WindowFrames
     }
 
     /// <summary>
-    /// Draws the lines a text layout committed, from its box's top left (<see cref="DrawingContext.DrawText(TextLayout, float, float, Color)"/>).
+    /// Draws the lines a text layout committed, from its box's top left (<see cref="DrawingContext.DrawText(TextLayout, float, float)"/>).
     /// </summary>
     /// <param name="text">The text leaf whose layout committed its lines.</param>
     /// <param name="x">The left edge of the box, in logical pixels.</param>

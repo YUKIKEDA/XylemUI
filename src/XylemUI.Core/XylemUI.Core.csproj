@@ -69,6 +69,8 @@
     <InternalsVisibleTo Include="XylemUI.Core.Tests" />
     <!-- The benchmarks time the internal layout and reactive paths (roadmap row M1a). -->
     <InternalsVisibleTo Include="XylemUI.E2E" />
+    <!-- The micro-benchmarks compare the internal comparison of a text style's key (row T15). -->
+    <InternalsVisibleTo Include="XylemUI.Benchmarks" />
     <!-- Tests that need a real Win32 window or message loop (the render guard, the dispatcher in the loop) live there. -->
     <InternalsVisibleTo Include="XylemUI.Platform.Windows.Tests" />
     <!-- The hit regions are tested against the pixels drawn on WARP (row R4e). -->

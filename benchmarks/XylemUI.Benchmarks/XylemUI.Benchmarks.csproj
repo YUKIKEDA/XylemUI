@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Micro-benchmarks with BenchmarkDotNet (.cursor/rules/bench.mdc): not a gate, and not run on the shared CI runners. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XylemUI.Benchmarks</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XylemUI.Core\XylemUI.Core.csproj" />
+  </ItemGroup>
+</Project>

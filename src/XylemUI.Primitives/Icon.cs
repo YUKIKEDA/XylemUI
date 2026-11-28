@@ -52,7 +52,9 @@ public static partial class Primitive
 
         Element icon = Elements.Text(char.ConvertFromUtf32(glyph.CodePoint));
         UiTree tree = icon.Tree!;
-        TextStyle style = tree.Nodes.GetRef(icon.Node).Text!.Style;
+
+        // The style read with the leaf's color, so that writing it back keeps the color (row T15).
+        TextStyle style = tree.TextStyleOf(icon.Node);
 
         // A line as high as the size, as Flutter's Icon sets (height 1.0): the font's line gap would make the box taller than the
         // icon (Fluent's typographic gap is 45 of 500 units).

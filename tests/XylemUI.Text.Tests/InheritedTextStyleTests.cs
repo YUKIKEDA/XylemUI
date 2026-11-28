@@ -228,7 +228,7 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
             bool familyMark = Marks(scene, leaves)[1];
             scene.Draw();
             _ = column.FontSize(25);
-            TextStyle taken = scene.Leaf(leaves[1]).Style;
+            TextStyleKey taken = scene.Leaf(leaves[1]).Style;
 
             Assert.Equal([false, false], equal);
             Assert.Equal(0, equalRequests);
@@ -423,7 +423,7 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
             _ = PerformanceAssert.DoesNotAllocate(1_000, _ => scene.Draw(), Iteration);
 
             // The last run's index is 999, an odd one.
-            TextStyle last = scene.Leaf(taken).Style;
+            TextStyleKey last = scene.Leaf(taken).Style;
             Assert.Equal((18f, 700, "Other", 22f / 18f), (last.Size, last.Font.Weight.Value, last.Font.Family, last.LineHeight));
         });
 
@@ -500,7 +500,7 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
             _ = leaves[0].FontSize(12);
             float ownSize = scene.Leaf(leaves[0]).Style.LineHeight;
 
-            scene.Tree.SetTextStyle(leaves[0].Node, scene.Leaf(leaves[0]).Style with { LineHeight = 2 });
+            scene.Tree.SetTextStyle(leaves[0].Node, scene.Tree.TextStyleOf(leaves[0].Node) with { LineHeight = 2 });
             _ = leaves[0].FontSize(24);
             float whole = scene.Leaf(leaves[0]).Style.LineHeight;
             _ = column.FontSize(18);
@@ -607,7 +607,7 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
                 return column = Column(text).FontSize(16).LineHeight(20);
             });
             InheritedTextStyle heldBefore = scene.Tree.HeldTextStyleOf(column.Node);
-            TextStyle styleBefore = scene.Leaf(text).Style;
+            TextStyleKey styleBefore = scene.Leaf(text).Style;
 
             foreach (Element element in new[] { column, text })
             {
@@ -945,13 +945,13 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
         Element text
     )
     {
-        TextStyle style = scene.Leaf(text).Style;
+        TextStyleKey style = scene.Leaf(text).Style;
         return (style.Font.Family, style.Font.Weight.Value, style.Font.Slant, style.Font.Stretch, style.Size, style.LineHeight);
     }
 
     private static (float Size, float LineHeight) SizeAndLine(TextScene scene, Element text)
     {
-        TextStyle style = scene.Leaf(text).Style;
+        TextStyleKey style = scene.Leaf(text).Style;
         return (style.Size, style.LineHeight);
     }
 
