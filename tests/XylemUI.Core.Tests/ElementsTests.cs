@@ -1640,6 +1640,46 @@ public sealed class ElementsTests(UiThreadFixture ui)
         });
     }
 
+    /// <summary>
+    /// The six text style setters throw on a thread that is not the UI thread, and write nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column made and mounted on the UI thread, with no text style; the test's own thread is another.
+    ///
+    /// Steps:
+    /// - On the test's thread, call <c>FontSize(12)</c>, <c>FontWeight(Bold)</c>, <c>FontSlant(Italic)</c>,
+    ///   <c>FontStretch(Condensed)</c>, <c>FontFamily("Serif")</c>, and <c>LineHeight(18)</c> on the column; then read its held text
+    ///   style on the UI thread.
+    ///
+    /// Expected:
+    /// - Each call throws <see cref="InvalidOperationException"/>; the column holds no field.
+    /// </remarks>
+    [Fact]
+    public void TextStyleSetters_OffTheUiThread_Throw()
+    {
+        Scene? scene = null;
+        Element column = default;
+        ui.Invoke(() =>
+        {
+            scene = new Scene();
+            scene.Mount(() => column = Column());
+        });
+
+        Assert.Throws<InvalidOperationException>(() => column.FontSize(12));
+        Assert.Throws<InvalidOperationException>(() => column.FontWeight(FontWeight.Bold));
+        Assert.Throws<InvalidOperationException>(() => column.FontSlant(FontSlant.Italic));
+        Assert.Throws<InvalidOperationException>(() => column.FontStretch(FontStretch.Condensed));
+        Assert.Throws<InvalidOperationException>(() => column.FontFamily("Serif"));
+        Assert.Throws<InvalidOperationException>(() => column.LineHeight(18));
+
+        ui.Invoke(() =>
+        {
+            Assert.Equal(TextStyleFields.None, scene!.Tree.HeldTextStyleOf(column.Node).Fields);
+            scene!.Dispose();
+        });
+    }
+
     // The flex properties of a row or a column.
     private static FlexProps FlexOf(Scene scene, Element element) =>
         ((LayoutAlgorithm.Flex)scene.Tree.Nodes.GetRef(element.Node).Layout.Style.Algorithm).Props;

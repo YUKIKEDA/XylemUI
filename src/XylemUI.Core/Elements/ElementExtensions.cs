@@ -138,7 +138,8 @@ public static partial class ElementExtensions
     {
         UiThread.VerifyAccess();
 
-        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        // A range check, not Enum.IsDefined, which allocated 5,096 B again on its first calls after each blocking collection
+        // (NativeAOT, .NET 10.0.15; docs/benchmarks/ts1-text-style.md, "Enum.IsDefined").
         if ((uint)value > (uint)global::XylemUI.JustifyContent.SpaceEvenly)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "The distribution is a value of JustifyContent.");
@@ -164,7 +165,8 @@ public static partial class ElementExtensions
     {
         UiThread.VerifyAccess();
 
-        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        // A range check, not Enum.IsDefined, which allocated 5,096 B again on its first calls after each blocking collection
+        // (NativeAOT, .NET 10.0.15; docs/benchmarks/ts1-text-style.md, "Enum.IsDefined").
         if ((uint)value > (uint)global::XylemUI.AlignItems.Stretch)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "The alignment is a value of AlignItems.");
@@ -342,7 +344,8 @@ public static partial class ElementExtensions
     {
         UiThread.VerifyAccess();
 
-        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        // A range check, not Enum.IsDefined, which allocated 5,096 B again on its first calls after each blocking collection
+        // (NativeAOT, .NET 10.0.15; docs/benchmarks/ts1-text-style.md, "Enum.IsDefined").
         if ((uint)value > (uint)global::XylemUI.Text.FontSlant.Oblique)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "The slant is a value of FontSlant.");
@@ -367,7 +370,8 @@ public static partial class ElementExtensions
     {
         UiThread.VerifyAccess();
 
-        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        // A range check, not Enum.IsDefined, which allocated 5,096 B again on its first calls after each blocking collection
+        // (NativeAOT, .NET 10.0.15; docs/benchmarks/ts1-text-style.md, "Enum.IsDefined").
         if (value is < global::XylemUI.Text.FontStretch.UltraCondensed or > global::XylemUI.Text.FontStretch.UltraExpanded)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "The stretch is a value of FontStretch.");
@@ -698,7 +702,8 @@ public static partial class ElementExtensions
     [UiThreadOnly]
     public static Element Overflow(this Element element, Overflow x, Overflow y)
     {
-        // A range check, not Enum.IsDefined, which allocated again after each blocking collection (PR for row TS1).
+        // A range check, not Enum.IsDefined, which allocated 5,096 B again on its first calls after each blocking collection
+        // (NativeAOT, .NET 10.0.15; docs/benchmarks/ts1-text-style.md, "Enum.IsDefined").
         if ((uint)x > (uint)global::XylemUI.Overflow.Scroll || (uint)y > (uint)global::XylemUI.Overflow.Scroll)
         {
             throw new ArgumentOutOfRangeException(

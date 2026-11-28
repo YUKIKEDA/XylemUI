@@ -20,6 +20,13 @@ internal sealed partial class UiTree
     internal long TextLeavesResolved => _textStyles?.Resolved ?? 0;
 
     /// <summary>
+    /// Gets the number of entries in each of the tree's text style tables (<see cref="TextStyleTables"/>): tests check that a freed
+    /// node takes its entries out with it.
+    /// </summary>
+    internal (int Held, int Detached, int OwnLineHeights) TextStyleEntries =>
+        _textStyles is { } tables ? (tables.Held.Count, tables.Detached.Count, tables.OwnLineHeights.Count) : (0, 0, 0);
+
+    /// <summary>
     /// Sets fields of a text style on a node (design §3.2, "The text style a container gives"): on a text leaf, as its own, which
     /// its ancestors do not change; on another node, as the values the text leaves below it take where neither they nor a nearer
     /// container set the field. Only the leaves whose resolved style changes are marked (<see cref="ChangeKind.Font"/>); values

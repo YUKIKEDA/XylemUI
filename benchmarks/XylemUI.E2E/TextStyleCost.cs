@@ -261,7 +261,6 @@ internal static class TextStyleCost
     private static void Typography(Element row, int weight, float size, float lineHeight) =>
         _ = row.FontWeight(new FontWeight(weight)).FontSize(size).LineHeight(lineHeight);
 
-    // The leaves marked for a change of their style since Unmark (ChangeKind.Font sets DirtyFlags.Text).
     // Takes the text marks off the leaves, as the frame does after it shapes them (WindowFrames): the layout pass takes off only the
     // layout marks, so without this a pass would count the marks of the leaves' creation and of the passes before.
     private static void Unmark(UiTree tree, Element[] leaves)
@@ -272,6 +271,7 @@ internal static class TextStyleCost
         }
     }
 
+    // Counts the leaves marked for a change of their style since the last Unmark: ChangeKind.Font sets DirtyFlags.Text.
     private static int Marked(UiTree tree, Element[] leaves)
     {
         int count = 0;

@@ -3,8 +3,8 @@ using static XylemUI.Elements;
 namespace XylemUI.Text.Tests;
 
 // The text style a container gives the text leaves below it (row TS1, design §2.13 and §3.2, "The text style a container gives"):
-// the order a leaf's fields are taken in, the walk a container's change makes, the leaves it marks, the subtrees put under a parent,
-// and the setters' allocations. A leaf is marked when its style changed: ChangeKind.Font sets DirtyFlags.Text, which nothing else
+// the order a leaf's fields are taken in, the walk a container's change makes, the leaves it marks, the subtrees taken out and put
+// under a parent, the language a leaf keeps, the entries a freed node takes out, and the setters' allocations. A leaf is marked when its style changed: ChangeKind.Font sets DirtyFlags.Text, which nothing else
 // sets on a leaf whose text stays.
 [Collection(UiThreadGroup.Name)]
 public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
@@ -625,6 +625,318 @@ public sealed class InheritedTextStyleTests(UiThreadFixture ui) : IDisposable
 
             Assert.True(heldBefore.SameAs(scene.Tree.HeldTextStyleOf(column.Node)));
             Assert.Equal(styleBefore, scene.Leaf(text).Style);
+        });
+
+    /// <summary>
+    /// Resolving a leaf's style keeps its language, its own and the one the locale gives it, on a container's change and on the
+    /// leaf's own setter; a container takes no language, and <c>Language</c> on it throws and changes nothing.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A scene whose locale is "ja"; a column of size 16 around a text of its own language "en" (own) and a text with no
+    ///   language (taken); mounted and drawn.
+    ///
+    /// Steps:
+    /// - Read both languages. Set the column's size to 20; read both languages and sizes. Set own's size to 12; read its language.
+    ///   Call <c>Language("en")</c> on the column; read the column's held style and both languages.
+    ///
+    /// Expected:
+    /// - "en" and "ja" before; after the column's 20, "en" and "ja" at size 20; after own's 12, "en". The column's
+    ///   <c>Language</c> throws <see cref="InvalidOperationException"/>; the column still holds the size 20 alone, and the languages
+    ///   are "en" and "ja".
+    /// </remarks>
+    [Fact]
+    public void Resolve_KeepsTheLeafsLanguage_AndAContainerTakesNone() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            scene.UiLocale = Locale.Parse("ja");
+            TextLanguage english = TextLanguage.FromTag("en");
+            Element column = default;
+            Element[] leaves = new Element[2];
+            scene.Mount(() =>
+            {
+                leaves[0] = Elements.Text("a").Language(english);
+                leaves[1] = Elements.Text("b");
+                return column = Column(leaves).FontSize(16);
+            });
+            scene.Draw();
+            TextLanguage[] before = Array.ConvertAll(leaves, leaf => scene.Leaf(leaf).Style.Language);
+
+            _ = column.FontSize(20);
+            (TextLanguage, float)[] resolved = Array.ConvertAll(leaves, leaf => (scene.Leaf(leaf).Style.Language, Size(scene, leaf)));
+            _ = leaves[0].FontSize(12);
+            TextLanguage ownSetter = scene.Leaf(leaves[0]).Style.Language;
+            InheritedTextStyle heldBefore = scene.Tree.HeldTextStyleOf(column.Node);
+
+            Assert.Throws<InvalidOperationException>(() => column.Language(english));
+            InheritedTextStyle heldAfter = scene.Tree.HeldTextStyleOf(column.Node);
+            TextLanguage[] after = Array.ConvertAll(leaves, leaf => scene.Leaf(leaf).Style.Language);
+
+            Assert.Equal([english, TestFont.Japanese], before);
+            Assert.Equal([(english, 20f), (TestFont.Japanese, 20f)], resolved);
+            Assert.Equal(english, ownSetter);
+            Assert.Equal((TextStyleFields.Size, 20f), (heldAfter.Fields, heldAfter.Size));
+            Assert.True(heldBefore.SameAs(in heldAfter));
+            Assert.Equal([english, TestFont.Japanese], after);
+        });
+
+    /// <summary>
+    /// A freed node takes its entries out of the text style tables: a container that holds a style, a subtree taken out of a styled
+    /// container, and a leaf with its own line height in pixels; the nodes made in the freed slots hold no style.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of size 20 around a box of stretch expanded (holder) around a text of its own line height 30 px (lined), and a row
+    ///   of weight 300 (row) around a text with no field of its own; mounted and drawn.
+    ///
+    /// Steps:
+    /// - Read the entries of the tables (held, detached, own line heights). Take the row out of the column; read them. Remove the
+    ///   row; read them. Remove the holder; read them. Make four nodes; read their slots, their held styles, and their marks.
+    ///
+    /// Expected:
+    /// - (3, 0, 1) at first; (3, 1, 1) with the row taken out; (2, 0, 1) after the row's removal; (1, 0, 0) after the holder's. The
+    ///   four nodes take the four freed slots, and each holds no field and has no mark and no field of its own.
+    /// </remarks>
+    [Fact]
+    public void Remove_TakesTheNodesOutOfTheTables_AndTheFreedSlotsStartWithNone() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element column = default;
+            Element holder = default;
+            Element lined = default;
+            Element row = default;
+            Element inRow = default;
+            scene.Mount(() =>
+            {
+                lined = Elements.Text("a").LineHeight(30);
+                holder = Box(lined).FontStretch(FontStretch.Expanded);
+                inRow = Elements.Text("b");
+                row = Row(inRow).FontWeight(Light);
+                return column = Column(holder, row).FontSize(20);
+            });
+            scene.Draw();
+            UiTree tree = scene.Tree;
+            int[] freed = [holder.Node.Index, lined.Node.Index, row.Node.Index, inRow.Node.Index];
+
+            (int, int, int) first = tree.TextStyleEntries;
+            tree.DetachAfter(column.Node, holder.Node, row.Node);
+            (int, int, int) takenOut = tree.TextStyleEntries;
+            tree.Remove(row.Node);
+            (int, int, int) rowRemoved = tree.TextStyleEntries;
+            tree.Remove(holder.Node);
+            (int, int, int) holderRemoved = tree.TextStyleEntries;
+
+            var made = new Handle<UiNode>[4];
+            for (int i = 0; i < made.Length; i++)
+            {
+                made[i] = tree.CreateNode(new LayoutStyle());
+            }
+
+            Assert.Equal((3, 0, 1), first);
+            Assert.Equal((3, 1, 1), takenOut);
+            Assert.Equal((2, 0, 1), rowRemoved);
+            Assert.Equal((1, 0, 0), holderRemoved);
+            Assert.Equal(freed.Order(), made.Select(node => node.Index).Order());
+            Assert.All(
+                made,
+                node =>
+                    Assert.Equal(
+                        (TextStyleFields.None, TextStyleMarks.None, TextStyleFields.None),
+                        (tree.HeldTextStyleOf(node).Fields, tree.Nodes.GetRef(node).TextStyleMarks, tree.Nodes.GetRef(node).TextOwnFields)
+                    )
+            );
+        });
+
+    /// <summary>
+    /// A leaf's own setter while the leaf is out of the tree resolves its other fields from what it took when it was taken out,
+    /// alone or as part of a subtree, and the leaf put under a parent then takes the parent's.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of size 20 around a text with no field of its own (lone) and a row of weight 300 (row) around another (in row);
+    ///   mounted and drawn.
+    ///
+    /// Steps:
+    /// - Take lone and then the row out of the column. Set lone's slant and in row's slant to italic; read their styles. Put lone in
+    ///   the row; read its style.
+    ///
+    /// Expected:
+    /// - Lone: size 20, weight 400, italic (what it took, not the defaults' 14). In row: size 20, weight 300, italic. Lone in the
+    ///   row: size 20, weight 300, italic.
+    /// </remarks>
+    [Fact]
+    public void LeafSetter_WhileOutOfTheTree_TakesWhatItTookWhenItWasTakenOut() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element first = default;
+            Element lone = default;
+            Element row = default;
+            Element inRow = default;
+            scene.Mount(() =>
+            {
+                lone = Elements.Text("a");
+                inRow = Elements.Text("b");
+                row = Row(inRow).FontWeight(Light);
+                return Column(first = Column(lone, row).FontSize(20));
+            });
+            scene.Draw();
+            UiTree tree = scene.Tree;
+
+            tree.DetachAfter(first.Node, default, lone.Node);
+            tree.DetachAfter(first.Node, default, row.Node);
+            _ = lone.FontSlant(FontSlant.Italic);
+            _ = inRow.FontSlant(FontSlant.Italic);
+            (string?, int, FontSlant, FontStretch, float, float) aloneOut = Fields(scene, lone);
+            (string?, int, FontSlant, FontStretch, float, float) inRowOut = Fields(scene, inRow);
+            tree.AppendChild(row.Node, lone.Node);
+            (string?, int, FontSlant, FontStretch, float, float) putInRow = Fields(scene, lone);
+
+            Assert.Equal(((string?)null, 400, FontSlant.Italic, FontStretch.Normal, 20f, float.NaN), aloneOut);
+            Assert.Equal(((string?)null, 300, FontSlant.Italic, FontStretch.Normal, 20f, float.NaN), inRowOut);
+            Assert.Equal(((string?)null, 300, FontSlant.Italic, FontStretch.Normal, 20f, float.NaN), putInRow);
+        });
+
+    /// <summary>
+    /// The children a parent lets go of all at once keep what they took, and each is resolved again where it is put: under a
+    /// parent that gives other values it takes them, and put back under the same parent it is not walked.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column around a column of size 20 (styled) around two texts with no field of their own (a and b), and a box with no text
+    ///   style (other); mounted and drawn.
+    ///
+    /// Steps:
+    /// - Take every child out of styled at once; read both sizes. Put a in other; read its size and mark. Put b back in styled;
+    ///   read the leaves resolved by it and its size. Set styled's size to 25; read both sizes.
+    ///
+    /// Expected:
+    /// - 20 and 20 while out. a in other: 14 (the default), marked. b back: no leaf resolved, 20. After 25: a 14, b 25.
+    /// </remarks>
+    [Fact]
+    public void DetachChildren_KeepsWhatEachTook_UntilItIsPutUnderAParent() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element styled = default;
+            Element other = default;
+            Element a = default;
+            Element b = default;
+            scene.Mount(() =>
+            {
+                a = Elements.Text("a");
+                b = Elements.Text("b");
+                styled = Column(a, b).FontSize(20);
+                other = Box();
+                return Column(styled, other);
+            });
+            scene.Draw();
+            UiTree tree = scene.Tree;
+
+            tree.DetachChildren(styled.Node);
+            float[] outside = [Size(scene, a), Size(scene, b)];
+            tree.AppendChild(other.Node, a.Node);
+            (float Size, bool Marked) underOther = (Size(scene, a), Marks(scene, [a])[0]);
+            long resolved = tree.TextLeavesResolved;
+            tree.AppendChild(styled.Node, b.Node);
+            long putBack = tree.TextLeavesResolved - resolved;
+            float back = Size(scene, b);
+            _ = styled.FontSize(25);
+            float[] changed = [Size(scene, a), Size(scene, b)];
+
+            Assert.Equal([20f, 20f], outside);
+            Assert.Equal((14f, true), underOther);
+            Assert.Equal(0, putBack);
+            Assert.Equal(20f, back);
+            Assert.Equal([14f, 25f], changed);
+        });
+
+    /// <summary>
+    /// An inline object of a text takes what the text's ancestors give, not the text's own values, and follows a change of them.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column of size 20 around a text of its own size 10 (outer) whose content is "n", an inline text "n" with no field of its
+    ///   own (inline), and "n"; mounted and drawn.
+    ///
+    /// Steps:
+    /// - Read both sizes. Set the column's size to 25; read both sizes and inline's mark.
+    ///
+    /// Expected:
+    /// - Outer 10 and inline 20; after the column's 25, outer 10 and inline 25, marked.
+    /// </remarks>
+    [Fact]
+    public void InlineObject_TakesTheTextsAncestors_NotTheTextsOwnValues() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element column = default;
+            Element[] leaves = new Element[2];
+            scene.Mount(() =>
+            {
+                Element inline = leaves[1] = Elements.Text("n");
+                leaves[0] = Elements
+                    .Text(
+                        (ref w) =>
+                        {
+                            w.Write("n".AsSpan());
+                            w.Inline(inline);
+                            w.Write("n".AsSpan());
+                        }
+                    )
+                    .FontSize(10);
+                return column = Column(leaves[0]).FontSize(20);
+            });
+            scene.Draw();
+            float[] first = Array.ConvertAll(leaves, leaf => Size(scene, leaf));
+
+            _ = column.FontSize(25);
+            float[] changed = Array.ConvertAll(leaves, leaf => Size(scene, leaf));
+
+            Assert.Equal([10f, 20f], first);
+            Assert.Equal([10f, 25f], changed);
+            Assert.True(Marks(scene, leaves)[1]);
+        });
+
+    /// <summary>
+    /// A line height in pixels from a nearer container becomes a multiple of the size a farther container gives, and follows a
+    /// change of that size.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A column (far) of size 16 around a row (near) of a line height of 24 px around a text with no field of its own (a) and a
+    ///   text of its own size 10 (b); mounted and drawn.
+    ///
+    /// Steps:
+    /// - Read both sizes and line heights. Set far's size to 20; read them and the marks.
+    ///
+    /// Expected:
+    /// - a 16 and 24 / 16, b 10 and 24 / 10. After far's 20: a 20 and 24 / 20, marked; b 10 and 24 / 10, not marked.
+    /// </remarks>
+    [Fact]
+    public void LineHeightInPixelsOfANearer_FollowsTheSizeOfAFarther() =>
+        ui.Invoke(() =>
+        {
+            using var scene = new TextScene(_font);
+            Element far = default;
+            Element[] leaves = new Element[2];
+            scene.Mount(() =>
+            {
+                leaves[0] = Elements.Text("a");
+                leaves[1] = Elements.Text("b").FontSize(10);
+                return far = Column(Row(leaves).LineHeight(24)).FontSize(16);
+            });
+            scene.Draw();
+            (float, float)[] first = Array.ConvertAll(leaves, leaf => SizeAndLine(scene, leaf));
+
+            _ = far.FontSize(20);
+            (float, float)[] sized = Array.ConvertAll(leaves, leaf => SizeAndLine(scene, leaf));
+
+            Assert.Equal([(16f, 24f / 16f), (10f, 24f / 10f)], first);
+            Assert.Equal([(20f, 24f / 20f), (10f, 24f / 10f)], sized);
+            Assert.Equal([true, false], Marks(scene, leaves));
         });
 
     // The family, weight, slant, stretch, size, and line height of a text's style.
