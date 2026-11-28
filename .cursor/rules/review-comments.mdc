@@ -29,6 +29,8 @@ A reply to a review is posted in the turn the review is read, and is not held un
 
 A report that gives the state of open PRs says, for each one, who wrote its last comment. "Waiting for review" is written only when the last comment is the agent's own reply; when it is the reviewer's, the PR waits for the agent. On PR #874 and PR #875 a re-review had come after the reply, and the report called both "waiting for review" without having read them.
 
+A fix made in the PR body is not in the diff, and a re-review reads the diff. The reply quotes the new sentence of the body. On PR #981 the reply said the body now named the main commit it compared with; the re-review read only the diff and reported the point as still open.
+
 Read the pull request's comments again just before posting a reply to a review: a re-review can land while the reply waits for the checks. On PR #309 a re-review of b98a1e3 came while the agent waited for that head's CI, and the agent posted its reply to the review before it without having read the re-review.
 
 ```text
