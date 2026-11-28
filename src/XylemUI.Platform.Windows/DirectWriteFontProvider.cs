@@ -48,7 +48,7 @@ public sealed unsafe class DirectWriteFontProvider : IFontProvider, IDisposable
     /// Initializes a new instance of the <see cref="DirectWriteFontProvider"/> class with the system's font fallback and fonts.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// DirectWrite could not create the factory, the fallback, or the collection (Windows 10 version 1703 and later have them).
+    /// DirectWrite could not create the factory, the fallback, or the collection (every Windows 11 has them).
     /// </exception>
     public DirectWriteFontProvider()
     {

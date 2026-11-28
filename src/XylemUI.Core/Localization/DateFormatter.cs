@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace XylemUI;
 
 /// <summary>
@@ -14,8 +16,10 @@ namespace XylemUI;
 /// in the locale's <c>gmtFormat</c> and <c>hourFormat</c>, short (<c>GMT+9</c>, <c>GMT+5:30</c>, <c>GMT+0</c>) for <c>z</c> and
 /// <c>v</c> and long (<c>GMT+09:00</c>, <c>GMT+00:00</c>) for <c>zzzz</c> and <c>vvvv</c>; time zone names are not in the tables.
 /// Making a format reads the tables and allocates; <see cref="TryFormat(DateTime, Span{char}, out int)"/>, its overloads, and the
-/// <c>Of</c> methods allocate nothing. The first range a format writes or returns reads its interval patterns and allocates;
-/// <c>TryFormatRange</c> and <c>OfRange</c> allocate nothing after that. <see cref="Format"/> makes a string.
+/// <c>Of</c> methods allocate nothing, and so do the <c>TryParse</c> methods for text of up to 256 characters. The format of
+/// <c>yMd</c> parses a date, and that of <c>yMd</c> joined with <c>jm</c> a date and a time; no other format parses. The first
+/// range a format writes or returns reads its interval patterns and allocates; <c>TryFormatRange</c> and <c>OfRange</c> allocate
+/// nothing after that. <see cref="Format"/> makes a string.
 /// </remarks>
 public sealed class DateFormatter
 {
@@ -35,6 +39,21 @@ public sealed class DateFormatter
     private const int FirstZoneSkeleton = 34;
     private const int ZoneSkeletons = 4;
     private const int FirstHourRangeEntry = 41 - ZoneSkeletons;
+
+    // Text this long or shorter is parsed in a buffer on the stack; longer text in a rented array.
+    private const int ParseCapacity = 256;
+
+    // The most digits a field of parsed text takes, so that its value fits an int; the range is checked after it is read.
+    private const int MaxFieldDigits = 9;
+
+    private const char NoBreakSpace = (char)0x00A0;
+    private const char NarrowNoBreakSpace = (char)0x202F;
+    private const char IdeographicSpace = (char)0x3000;
+
+    // Full-width punctuation (U+FF01 to U+FF5E), which parsing compares as the ASCII character 0xFEE0 below it (U+0021 to U+007E).
+    private const char FirstFullWidth = (char)0xFF01;
+    private const char LastFullWidth = (char)0xFF5E;
+    private const int FullWidthOffset = 0xFEE0;
 
     // The skeletons of Flutter's validDateFormats, in the order of the pattern tables (tools/CldrTableGen/DateTables.cs): the first
     // 28 have date fields only, the rest time fields only, and the 7 that start at FirstHourSkeleton have j.
@@ -95,6 +114,13 @@ public sealed class DateFormatter
     private readonly OffsetPattern _positive;
     private readonly OffsetPattern _negative;
 
+    // What the format parses (design §4.11, "Parsing short dates"), the pattern's pieces as parsing reads them, and the am and pm of
+    // the pattern's day period field without their bidi marks; empty for a format that does not parse them.
+    private readonly ParseKind _parse;
+    private readonly DatePatternItem[] _parseItems;
+    private readonly string _am;
+    private readonly string _pm;
+
     // The entry of the interval table that a range reads, -1 for a joined format and a time zone skeleton, and the entry a 24-hour
     // entry stands for when the table points it there; and the range's patterns, read when a range is first formatted, so that a
     // binary that formats no range keeps no interval table.
@@ -102,7 +128,7 @@ public sealed class DateFormatter
     private readonly int _ownRangeEntry;
     private DateRangeFormat? _ranges;
 
-    private DateFormatter(LocaleData locale, string pattern, int rangeEntry, int ownRangeEntry)
+    private DateFormatter(LocaleData locale, string pattern, int rangeEntry, int ownRangeEntry, ParseKind parse)
     {
         ReadOnlySpan<byte> table = locale.DatePatternTable;
         _locale = locale;
@@ -110,6 +136,19 @@ public sealed class DateFormatter
         _ownRangeEntry = ownRangeEntry;
         _names = locale.Names;
         _items = DatePattern.Compile(pattern);
+        _parse = parse;
+        _parseItems = parse == ParseKind.None ? [] : ParseItems(_items, pattern);
+        _am = string.Empty;
+        _pm = string.Empty;
+        foreach (DatePatternItem item in _parseItems)
+        {
+            if (item.Symbol == 'a')
+            {
+                _am = ParseText.WithoutBidiMarks(_names.DayPeriod(false, Width(item.Length), false));
+                _pm = ParseText.WithoutBidiMarks(_names.DayPeriod(true, Width(item.Length), false));
+            }
+        }
+
         foreach (DatePatternItem item in _items)
         {
             switch (item.Symbol)
@@ -153,6 +192,14 @@ public sealed class DateFormatter
         TimeOnly,
     }
 
+    // What a format parses: nothing, a date (yMd), or a date and a time (yMd joined with jm).
+    private enum ParseKind : byte
+    {
+        None,
+        Date,
+        DateTime,
+    }
+
     /// <summary>
     /// Makes a format of one of Flutter's 41 skeletons.
     /// </summary>
@@ -185,7 +232,8 @@ public sealed class DateFormatter
             rangeEntry = FirstHourRangeEntry + index - FirstHourSkeleton;
         }
 
-        return new DateFormatter(locale, PatternOf(locale.DatePatternTable, index, use24HourFormat), rangeEntry, ownRangeEntry);
+        string pattern = PatternOf(locale.DatePatternTable, index, use24HourFormat);
+        return new DateFormatter(locale, pattern, rangeEntry, ownRangeEntry, skeleton == "yMd" ? ParseKind.Date : ParseKind.None);
     }
 
     /// <summary>
@@ -226,7 +274,8 @@ public sealed class DateFormatter
         ReadOnlySpan<byte> table = locale.DatePatternTable;
         string joining = StringAt(table, JoiningOf(dateSkeleton));
         string pattern = Join(joining, PatternOf(table, date, use24HourFormat), PatternOf(table, time, use24HourFormat));
-        return new DateFormatter(locale, pattern, -1, -1);
+        bool parses = dateSkeleton == "yMd" && timeSkeleton == "jm";
+        return new DateFormatter(locale, pattern, -1, -1, parses ? ParseKind.DateTime : ParseKind.None);
     }
 
     /// <summary>
@@ -411,6 +460,60 @@ public sealed class DateFormatter
     /// <returns>The formatted date and time.</returns>
     /// <exception cref="ArgumentException">The format has a time zone field.</exception>
     public string Format(DateTime value) => Of(value).ToString();
+
+    /// <summary>
+    /// Reads a date the format of <c>yMd</c> writes, strictly in the order of its pattern (design §4.11, "Parsing short dates"): each
+    /// number as many digits as it has, of the locale's digits, ASCII digits, or full-width digits (U+FF10 to U+FF19), and the year
+    /// as written (<c>26</c> is the year 26); each separator as the pattern writes it, but that U+0020, U+00A0, U+202F, and U+3000
+    /// each stand for any of the four, and full-width punctuation (U+FF01 to U+FF5E) for its ASCII character. White space at either
+    /// end and the bidi marks U+200E, U+200F, and U+061C anywhere are skipped. Allocates nothing for text of up to 256 characters.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <param name="value">The date; <see langword="default"/> when the text is not read.</param>
+    /// <returns><see langword="false"/> when the text does not follow the pattern, or has a year outside 1 to 9999, a month outside 1
+    /// to 12, or a day the month does not have.</returns>
+    /// <exception cref="InvalidOperationException">The format is not of the <c>yMd</c> skeleton alone
+    /// (<see cref="FromSkeleton"/>).</exception>
+    public bool TryParse(ReadOnlySpan<char> text, out DateOnly value)
+    {
+        if (_parse != ParseKind.Date)
+        {
+            ThrowHelper.ThrowDateParseNotSupported("Only a format of the yMd skeleton (FromSkeleton) parses a date.");
+        }
+
+        if (TryRead(text, out DateTime clock))
+        {
+            value = DateOnly.FromDateTime(clock);
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Reads a date and a time the format of <c>yMd</c> joined with <c>jm</c> writes, as
+    /// <see cref="TryParse(ReadOnlySpan{char}, out DateOnly)"/> reads a date: an hour of <c>h</c> is 1 to 12 and takes the pattern's
+    /// am or pm, compared ordinally and ignoring case (12 am is the hour 0), an hour of <c>H</c> is 0 to 23, and a minute 0 to 59.
+    /// The value's <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Unspecified"/> and its seconds are 0; a time that a
+    /// change to daylight saving time skips is not checked. Allocates nothing for text of up to 256 characters.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <param name="value">The date and time; <see langword="default"/> when the text is not read.</param>
+    /// <returns><see langword="false"/> when the text does not follow the pattern, or has a field outside its range.</returns>
+    /// <exception cref="InvalidOperationException">The format is not of <c>yMd</c> joined with <c>jm</c>
+    /// (<see cref="FromSkeletons"/>).</exception>
+    public bool TryParse(ReadOnlySpan<char> text, out DateTime value)
+    {
+        if (_parse != ParseKind.DateTime)
+        {
+            ThrowHelper.ThrowDateParseNotSupported(
+                "Only a format of the yMd skeleton joined with the jm skeleton (FromSkeletons) parses a date and a time."
+            );
+        }
+
+        return TryRead(text, out value);
+    }
 
     /// <summary>
     /// Writes the fields of a clock and an offset. The caller has checked that the value has every field the format writes.
@@ -604,6 +707,63 @@ public sealed class DateFormatter
         return reader.ReadString();
     }
 
+    // The pieces of a pattern as parsing reads them: the literals without their bidi marks; a literal left empty is dropped. No yMd
+    // or jm pattern of CLDR 49 starts or ends with white space, so the literals are not trimmed (a trim survived the mutants).
+    private static DatePatternItem[] ParseItems(DatePatternItem[] items, string pattern)
+    {
+        var parsed = new List<DatePatternItem>(items.Length);
+        for (int i = 0; i < items.Length; i++)
+        {
+            DatePatternItem item = items[i];
+            if (item.Symbol != '\0')
+            {
+                bool read = item.Symbol is 'y' or 'h' or 'H' or 'm' or 'a' || (item.Symbol is 'M' or 'd' && item.Length <= 2);
+                if (!read)
+                {
+                    // tools/CldrTableGen stops on a yMd or jm pattern with another field (design §4.11, "The generator's stop").
+                    Invariant.Fail("The date pattern " + pattern + " has the field " + item.Symbol + ", which parsing does not read.");
+                }
+
+                parsed.Add(item);
+                continue;
+            }
+
+            string literal = ParseText.WithoutBidiMarks(item.Literal);
+            if (literal.Length > 0)
+            {
+                parsed.Add(item with { Literal = literal });
+            }
+        }
+
+        return [.. parsed];
+    }
+
+    // Reads a literal of a pattern at a position of the text, a character for each of its characters, as Fold compares them.
+    private static bool TryReadLiteral(ReadOnlySpan<char> text, ref int at, string literal)
+    {
+        foreach (char expected in literal)
+        {
+            if (at >= text.Length || Fold(text[at]) != Fold(expected))
+            {
+                return false;
+            }
+
+            at++;
+        }
+
+        return true;
+    }
+
+    // A character as parsing compares a separator (design §4.11, "Separators, am and pm, full-width symbols"): U+0020, U+00A0,
+    // U+202F, and the full-width space U+3000 as a space, and full-width punctuation as its ASCII character.
+    private static char Fold(char character) =>
+        character switch
+        {
+            ' ' or NoBreakSpace or NarrowNoBreakSpace or IdeographicSpace => ' ',
+            >= FirstFullWidth and <= LastFullWidth => (char)(character - FullWidthOffset),
+            _ => character,
+        };
+
     // Throws ArgumentException when the format does not take a value of a type: a date for a format with time fields, a time for a
     // format with date fields, and a value with no offset for a format with a time zone field (design §4.11, "Value types").
     private void Check(ValueKind kind)
@@ -723,6 +883,170 @@ public sealed class DateFormatter
         }
 
         writer.Append(_gmtSuffix);
+    }
+
+    // Reads the text without its bidi marks and the white space at its ends.
+    private bool TryRead(ReadOnlySpan<char> text, out DateTime value)
+    {
+        char[]? rented = null;
+        Span<char> buffer = text.Length <= ParseCapacity ? stackalloc char[ParseCapacity] : (rented = ArrayPool<char>.Shared.Rent(text.Length));
+        try
+        {
+            int length = ParseText.WithoutBidiMarks(text, buffer);
+            return TryReadFields(buffer[..length].Trim(), out value);
+        }
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<char>.Shared.Return(rented);
+            }
+        }
+    }
+
+    // Reads the pieces of the pattern in their order, then checks the fields' ranges (design §4.11, "Parsing short dates" and "The
+    // hour fields and the result").
+    private bool TryReadFields(ReadOnlySpan<char> text, out DateTime value)
+    {
+        value = default;
+        int year = 0;
+        int month = 0;
+        int day = 0;
+        int hour = 0;
+        int minute = 0;
+        bool twelveHour = false;
+        bool pm = false;
+        int at = 0;
+        foreach (DatePatternItem item in _parseItems)
+        {
+            if (item.Symbol == '\0')
+            {
+                if (!TryReadLiteral(text, ref at, item.Literal))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (item.Symbol == 'a')
+            {
+                if (!TryReadDayPeriod(text, ref at, out pm))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            int number = ReadNumber(text, ref at);
+            if (number < 0)
+            {
+                return false;
+            }
+
+            switch (item.Symbol)
+            {
+                case 'y':
+                    year = number;
+                    break;
+                case 'M':
+                    month = number;
+                    break;
+                case 'd':
+                    day = number;
+                    break;
+                case 'h':
+                    hour = number;
+                    twelveHour = true;
+                    break;
+                case 'H':
+                    hour = number;
+                    break;
+                default:
+                    // m: ParseItems lets no other field through.
+                    minute = number;
+                    break;
+            }
+        }
+
+        bool date = at == text.Length && year is >= 1 and <= 9999 && month is >= 1 and <= 12;
+        if (!date || day < 1 || day > DateTime.DaysInMonth(year, month) || minute > 59)
+        {
+            return false;
+        }
+
+        // tools/CldrTableGen lets h into a jm pattern only with a, so a read h has its am or pm.
+        if (twelveHour ? (hour is < 1 or > 12) : hour > 23)
+        {
+            return false;
+        }
+
+        hour = twelveHour ? (hour % 12) + (pm ? 12 : 0) : hour;
+        value = new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Unspecified);
+        return true;
+    }
+
+    // Reads a number at a position: every digit there, but -1 for none or for more than MaxFieldDigits.
+    private int ReadNumber(ReadOnlySpan<char> text, ref int at)
+    {
+        int value = 0;
+        int count = 0;
+        while (at < text.Length)
+        {
+            int digit = ParseText.DigitValue(text[at], _zero);
+            if (digit < 0)
+            {
+                break;
+            }
+
+            if (count == MaxFieldDigits)
+            {
+                return -1;
+            }
+
+            value = (value * 10) + digit;
+            count++;
+            at++;
+        }
+
+        return count == 0 ? -1 : value;
+    }
+
+    // Reads the pattern's am or pm at a position: each character as Fold compares a separator, and ignoring case ordinally, as ICU's
+    // matchString and .NET's TryParseExact compare them (design §4.11, "Separators, am and pm, full-width symbols"). es-CO's
+    // p.<U+202F>m. is read from p. m. typed with a space. Neither step depends on culture data, so it reads them under
+    // InvariantGlobalization too.
+    private bool TryReadDayPeriod(ReadOnlySpan<char> text, ref int at, out bool pm)
+    {
+        ReadOnlySpan<char> rest = text[at..];
+        pm = StartsWithFolded(rest, _pm);
+        if (!pm && !StartsWithFolded(rest, _am))
+        {
+            return false;
+        }
+
+        at += pm ? _pm.Length : _am.Length;
+        return true;
+    }
+
+    // Whether a text starts with a word, each character folded as a separator is and compared ignoring case ordinally.
+    private static bool StartsWithFolded(ReadOnlySpan<char> text, string word)
+    {
+        if (text.Length < word.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < word.Length; i++)
+        {
+            if (char.ToUpperInvariant(Fold(text[i])) != char.ToUpperInvariant(Fold(word[i])))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

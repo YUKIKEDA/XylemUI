@@ -429,6 +429,12 @@ internal sealed class DateTables
             CheckPattern(tag, pattern);
         }
 
+        // jm in the hour of the locale and in 24 hours: the 24-hour patterns follow the 41 in the order of the j skeletons.
+        int jm = Array.IndexOf(Skeletons, "jm");
+        CheckParsed(tag, "yMd", written[Array.IndexOf(Skeletons, "yMd")]);
+        CheckParsed(tag, "jm", written[jm]);
+        CheckParsed(tag, "jm", written[Skeletons.Length + jm - Array.IndexOf(Skeletons, "j")]);
+
         foreach (string joining in joinings)
         {
             TableBytes.Add(table, joining);
@@ -519,6 +525,20 @@ internal sealed class DateTables
             {
                 throw new InvalidDataException("The pattern " + pattern + " of " + tag + " has a field the formats do not write.");
             }
+        }
+    }
+
+    // The fields DateFormatter's parsing reads (design §4.11, "The generator's stop"): a yMd pattern has one each of y, M, and d, M
+    // and d numeric (one or two letters; CheckPattern has already refused yy), and a jm pattern h with a, or H, and m. Anything else
+    // stops the tool, so that no table holds a pattern parsing cannot read.
+    private static void CheckParsed(string tag, string skeleton, string pattern)
+    {
+        List<(char Symbol, int Length)> fields = SkeletonMatcher.Fields(pattern);
+        string symbols = string.Concat(fields.Select(field => field.Symbol).Order());
+        bool read = skeleton == "yMd" ? symbols == "Mdy" && fields.All(field => field.Symbol == 'y' || field.Length <= 2) : symbols is "ahm" or "Hm";
+        if (!read)
+        {
+            throw new InvalidDataException("The " + skeleton + " pattern " + pattern + " of " + tag + " has a field the parsing does not read.");
         }
     }
 

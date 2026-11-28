@@ -35,10 +35,7 @@ internal static unsafe class DisplayWatch
     )
     {
         presentQpc = 0;
-        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 15063))
-        {
-            _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        }
+        _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
         ID3D11Device* device = null;
         ID3D11DeviceContext* context = null;
