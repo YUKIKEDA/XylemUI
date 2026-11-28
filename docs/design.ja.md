@@ -2328,10 +2328,10 @@ public void SetTextStyle(NodeHandle node, TextStyle style);
   - **範囲のスタイル:** 1 つの文章の中の範囲ごとのスタイル（`SpanStyle`、§4.8）の null の欄は、今と同じく葉の効く値を使う。行 TS1 の後は、その値に容器から受け継いだ値も入る。範囲のスタイルは、受け継いだ値の上に重なる。
   - **外す口は無い:** 容器や葉に付けた値を、後から外す（付けていない状態に戻す）口は無い。`FontFamily(null)` は、OS の UI のフォントを自分の値として付ける。条件で外したい時は、`Show` などで容器を作り直す。
   - **確かめ方:** 優先の順（葉の自分の値、近い容器、遠い容器、既定）を欄ごとに確かめる。容器の値を変えた時に、その欄を自分で付けた葉と同じ欄を持つ容器の下で下りるのが止まること、印の付く葉の数が値の変わった葉の数と同じであること（太さだけを自分で付けた葉は、容器の大きさが変われば印される）、付け替えと `Show`・`For` で入れた部分木が新しい祖先から解かれること、等しい値を書いても印が付かないこと、行の高さの論理画素が葉の効く大きさで倍率になること（容器の大きさを変えると倍率が変わる）、setter の割り当てが 0 であること（割り当て 0 のテスト）
-  - **測ること:** 1 万個の文字の葉の木で、容器の文字のスタイルを変えた時の印の付く葉の数と、整形とレイアウトの時間を、行 TS1 の前と後で測る（ロードマップの行 TS1） `Fluent.Button` は 3 つの setter を呼ぶので、テーマで値が変わると部分木を 3 回下る。1 度に 3 つの欄を書く内部の口を持つかは、実装の PR が、この回数とボタンの数で測って決める。
+  - **測ること:** 1 万個の文字の葉の木で、容器の文字のスタイルを変えた時の印の付く葉の数と、整形とレイアウトの時間を、行 TS1 の前と後で測る（ロードマップの行 TS1） `Fluent.Button` は 3 つの setter を呼ぶので、テーマで値が変わると部分木を 3 回下る。1 度に 3 つの欄を書く内部の口は持たない（実装の PR が測って決めた。ボタン 1,000 個で 3 回下っても 0.53 ms で、変わった後のレイアウトの約 6 ms に比べて小さい。`docs/benchmarks/ts1-text-style.md`）。
 - **計測の呼び方:** layout は、`UiNode.Text` が null でない葉を文字の葉として、`MeasureFunc` と `IntrinsicWidthsFunc` を通さずに文字の計測を直接呼ぶ。葉ごとに closure を作ると、10,101 個の葉が 10,101 個の closure を持ち、呼ぶたびに間接呼び出しと、handle からのノードの引き直しが入る。Taffy の `compute_layout_with_measure` は計測にノードの文脈を渡す （Taffy v0.15.1 の `taffy_tree.rs` 971〜978 行目、`MeasureFunction` は `NodeId` と `Option<&mut NodeContext>` を受け取る）。Flutter の `RenderParagraph` も、自分の `performLayout` の中で `TextPainter` を測る（Flutter 3.47.8 の `paragraph.dart` 900〜904・956〜966 行目）。利用者が書く計測関数は、今のまま `MeasureFunc` と `IntrinsicWidthsFunc` で受ける。文字の葉は内容の幅を返す葉として扱うので、L5 の「親で止める」が効く。Debug のビルドの内容の幅と計測の突き合わせ（L4）も、文字の葉に同じく掛ける
 - **文字の葉の状態は参照 1 つ:** `UiNode` は `TextLeaf?` を 1 つ持つ（8 バイト）。V1a の前の設計の `TextState` の struct（§2.5 にあった）をそのまま埋め込むと、参照 3 つ（24 バイト）、長さと詰め物（8 バイト）、`TextStyle`（約 40 バイト）で、文字の葉でないノードも約 72 バイト大きくなる。Flutter の `RenderParagraph` も、文字を持つ箱だけが文字の状態を持つ
-- **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。行 PL1 の前は `DesktopWindow` が窓ごとに作っていたので、`XylemApp.Run` が UI スレッドに 1 つ作る形に直す（Grill の 5 巡目でオーナーが決定、Issue #872。§6.0）。4a（Issue #928）から、`XylemApp.Run` は 1 回の走りに `DirectWriteFontProvider` と `TextContext` を 1 つずつ作る。提供者を `IPlatformApp.Fonts` から引く形にするのは、行 PL1 の 6 つ目の実装の PR である。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
+- **整形の道具は UI スレッドに 1 つ:** `TextContext` を呼び出し側（アプリの起動）が作り、同じ UI スレッドの `UiTree` に渡す。`IFontProvider` と `TextShaper` は 1 つのスレッドで使う（§4.5）。比べた 3 つは、フォントの集まりをアプリで共有する（Flutter 3.47.8 は `Engine` が `FontCollection` を持ち、1 つの Engine が複数の view を持つ（`shell/common/engine.h` 1120 行目）。Avalonia 12.1.4 の `FontManager.Current` は 1 つだけの値（`FontManager.cs` 73〜88 行目）。GPUI（zed v1.25.3）は `App` が `Arc<TextSystem>` を持ち（`app.rs` 819・935 行目）、ウィンドウはそれを包む（`window.rs` 1644 行目））。ウィンドウごとに持つと、同じフォントをウィンドウの数だけ開く。`TextContext` の寿命は UI スレッドと同じで、作った側が `Dispose` する。行 PL1 の前は `DesktopWindow` が窓ごとに作っていたので、`XylemApp.Run` が UI スレッドに 1 つ作る形に直した（Grill の 5 巡目でオーナーが決定、Issue #872。§6.0）。4a（Issue #928）から 5 つ目の実装の PR までは、`XylemApp.Run` が 1 回の走りに `DirectWriteFontProvider` と `TextContext` を 1 つずつ作っていた。行 PL1 の 6 つ目の実装の PR（Issue #959）から、提供者はホストが 1 つ持ち（`IPlatformApp.Fonts`）、`XylemApp.Run` はそれで `TextContext` を作る。テストは、同梱のフォント（`FontFallback.Bundled`）だけを返すテスト用の `IFontProvider` を渡す。Linux と macOS の CI には DirectWrite が無いため
 - **内容を書く:** `SetText` は `TextLeaf.SetContent` で `Buffer` に写す。前と同じ内容（`SequenceEqual`）なら何もしない。違えば `Shaped` と `LineBreaks` を捨て、ノードを layout の dirty にする。§2.4 のプロパティの記述子の `Setter` は `SetContent` を呼び、dirty の印は記述子の `ChangeKind` が付ける。`SetTextStyle` も、前と等しいなら何もしない。`TextBuilder` の比べ方（ロードマップの V1 の未決の 1 点）は、V1d でこの上に作った（§2.13「部品の API」の「`TextBuilder` の 2 点」）
 - **キャッシュ:** `ShapedTextCache` は `ShapingResult` を 1 つ持つ（フォントの run、整形、改行の候補、内容の幅）。内容かスタイルが変わると捨てる。`LineBreakCache` は幅を鍵に 4 つまで持ち、1 つが `LineBreakResult`（Pass1）・`LineLayoutResult`（Pass2）・行の高さの合計を持つ。Pass2 は緊急ブレークで行を増やすことがあるので（§4.1）、高さは Pass2 の後で決まり、Pass2 の結果まで持つ。高さは文字の葉の結果に効かないので、鍵は幅だけ（`MinContent` と `MaxContent` は最小と最大の内容の幅に置き換えてから引く）。min-content と max-content の幅は `ShapingResult.IntrinsicWidths` を整形の結果と一緒に持ち、高さに依存しない（`DependsOnHeight` は false）。項目は使い回し、配列は足りないときだけ広げる。キャッシュが当たったときも、外れて項目を使い回すときも、定常状態の割り当ては 0
 - **メモリ:** 配列は、葉を初めて測るときに、内容が要る大きさで確保する。T1b の `ShapingResult` は、作った時点で 64 文字・64 グリフなどの配列を確保していた（約 2.5 KB。PR #297 のレビュー）。V1a ではこれをやめる。空の葉と、まだ測っていない葉は配列を持たない。広げるときは、要る大きさと今の 2 倍の大きいほうにする（今の `Ensure`）。そのため、葉が持つ配列は、それまでで最も長い内容の 2 倍に収まる。行の境界の整形のやり直しに使う作業用の配列（T1b の `ShapingResult` の `_scratch`）は葉ごとに持たず、`TextShaper` に 1 つ持つ（`TextContext` の shaper を、UI スレッドのすべての葉が使う）。初めて測った葉 1 つの配列の中身は、次のとおりである。記号は、文字数（UTF-16）を n、グリフ数を g、改行の候補の数を b、フォントの run の数を r、行数を L、幅の項目の数を e とする
@@ -3859,12 +3859,19 @@ public static partial class Localization
 - **12 時間か 24 時間か:** `j` を含むスケルトンは、`use24HourFormat` が `true` なら 24 時間の書式を、`false` ならロケールの既定（CLDR の `timeData`）の書式を使う。OS の値が `false` でも、ロケールの既定が 24 時間なら（`ja`、`de`）24 時間で出す。`H` と `h` を書いたスケルトンは、OS の値を見ない。部品は `Localization.Use24HourFormat` を読んで渡す。Flutter も、`alwaysUse24HourFormat` が `true` の時だけ 24 時間の形に変え、`false` ならロケールの形のままである（`packages/flutter_localizations/lib/src/material_localizations.dart` 442〜447 行目）。ただし Flutter の時刻の書式は、CLDR のパターンでなく、訳の値の 6 つの形（`TimeOfDayFormat`）の 1 つで組み立てる（同じファイルの 205〜229 行目。206〜213 行目のコメントが理由を書く）。XylemUI は CLDR のパターンで出す。午前と午後を前に置くロケール（`ko`）も、パターンがそう書く。
 - **値の型:** `DateTime`、`DateTimeOffset`、`DateOnly`、`TimeOnly` を受ける。`DateTime` の `Kind` は見ず、欄の値をそのまま出す。`DateTimeOffset` は、欄の値と、時間帯のスケルトンの GMT からの差に使う。時間帯の変換はしない。時刻の欄を持つ書式に `DateOnly` を、日付の欄を持つ書式に `TimeOnly` を渡すと `ArgumentException` である。
 - **名前と週:** 月、曜日、四半期、紀元、午前と午後の名前（幅と、文中か単独かの別）と、週の始まり（`LocaleData.FirstDayOfWeek`）を持つ。名前は、初めて読んだ時に `string` にして `LocaleData` が持ち続ける。
-- **短い日付の解析（B12 が使う）:** `"yMd"` の書式だけが解析を持つ。書式の並び（年・月・日の順と区切り）のとおりの文字だけを受け、Flutter の `parseCompactDate` と同じく厳しく読む（`packages/flutter_localizations/lib/src/material_localizations.dart` 183〜189 行目の `parseStrict`。読めなければ `null`）。数字は、ロケールの数字と ASCII の数字と全角の数字（U+FF10〜U+FF19）を受け、全角の数字は数値の解析と同じく ASCII の数字として読む（PR #884 のレビューの後、Issue #880 の Grill でオーナーが決定）。日時の文字の解析も同じである。存在しない日（2 月 30 日）は `false` である。Avalonia の `CalendarDatePicker` は、.NET の `DateTime.Parse` で緩く読む（`src/Avalonia.Controls/CalendarDatePicker/CalendarDatePicker.cs` 741〜743 行目）。
+- **短い日付の解析（B12 が使う）:** `"yMd"` の書式だけが解析を持つ。書式の並び（年・月・日の順と区切り）のとおりの文字だけを受け、Flutter の `parseCompactDate` と同じく厳しく読む（`packages/flutter_localizations/lib/src/material_localizations.dart` 183〜189 行目の `parseStrict`。読めなければ `null`）。数字は、ロケールの数字と ASCII の数字と全角の数字（U+FF10〜U+FF19）を受け、全角の数字は数値の解析と同じく ASCII の数字として読む（PR #884 のレビューの後、Issue #880 の Grill でオーナーが決定）。日時の文字の解析も同じである。存在しない日（2 月 30 日）は `false` である。数字は、欄の長さ（`M` と `MM`、`d` と `dd`）によらず、あるだけ読む（`intl` の `_nextInteger`。fr の `dd/MM/y` でも `3/2/2026` を読む）。値があふれないよう桁の数に上限を置き、範囲は読んだ後に確かめる。Avalonia の `CalendarDatePicker` は、.NET の `DateTime.Parse` で緩く読む（`src/Avalonia.Controls/CalendarDatePicker/CalendarDatePicker.cs` 741〜743 行目）。
   - **年の読み方（Issue #880 の Grill でオーナーが決定。Flutter と同じ `intl` を読んでから決める）:** Flutter 3.47.8 が固定する `intl` は 0.20.3 である（`pubspec.lock` 541〜548 行目、`packages/flutter_tools/pubspec.yaml` 28 行目の `intl: 0.20.3`。`packages/flutter_localizations/pubspec.yaml` 16 行目は `^0.20.3`）。dart-lang/i18n の `intl-v0.20.3` のタグの `pkgs/intl` を読んだ。年の欄は、書式の `y` の数で読み方が変わる。
-    - **`y` が 2 つ（`yy`）の時:** 世紀が無いとみなす（`lib/src/intl/date_format_field.dart` 488〜491 行目の `parseYear` が、幅 2 の時だけ `hasAmbiguousCentury` を立てる）。読んだ 2 桁の年は、今から 80 年前より後、20 年後まで（両端は、20 年後を含み、80 年前を含まない）の中の年にする（`lib/src/intl/date_builder.dart` 219〜264 行目の `_estimatedYear`。窓の幅は 239 行目の `lookBehindYears = 80`、両端の扱いは 246〜253 行目のコメント）。`yy` の欄に 3 桁以上を打った時（`2026`）は、書いたとおりの年である（30 行目の `_hasCentury` は、年が 0 未満か 100 以上なら世紀があるとみなす）。
+    - **`y` が 2 つ（`yy`）の時の `intl`:** 世紀が無いとみなす（`lib/src/intl/date_format_field.dart` 488〜491 行目の `parseYear` が、幅 2 の時だけ `hasAmbiguousCentury` を立てる）。読んだ 2 桁の年は、今から 80 年前より後、20 年後まで（両端は、20 年後を含み、80 年前を含まない）の中の年にする（`lib/src/intl/date_builder.dart` 219〜264 行目の `_estimatedYear`。窓の幅は 239 行目の `lookBehindYears = 80`、両端の扱いは 246〜253 行目のコメント）
     - **`y` が 1 つの時:** 数字をあるだけ読み、書いたとおりの年にする（`date_format_field.dart` 442〜461 行目の `_nextInteger`）。`26` は 26 年である。
-    - XylemUI も同じにする（Issue #880 の Grill でオーナーが決定）。CLDR の `"yMd"` の書式は、`en` の `M/d/y`、`ja` の `y/M/d` のように `y` が 1 つのものが多い。その時は、`26` と打つと 26 年になり、B12 の欄は、範囲の外の日として扱い、打った年が範囲の外であることを利用者にはっきり伝える（行 B12。PR #884 のレビュー）。「今」は、`intl` の `clock.now()` に当たるものとして、`TimeProvider`（§12.2 の仮想クロック）から取り、テストが PC の時計に依らないようにする。
+    - XylemUI は `y` が 1 つの読み方だけを持つ（Issue #880 の Grill でオーナーが決定）。CLDR の `"yMd"` の書式は、`en` の `M/d/y`、`ja` の `y/M/d` のように `y` が 1 つである。`26` と打つと 26 年になり、B12 の欄は、範囲の外の日として扱い、打った年が範囲の外であることを利用者にはっきり伝える（行 B12。PR #884 のレビュー）。
+    - **`yy` の窓は持たない（Issue #906 の実装の 7 つ目の Grill でオーナーが決定）:** 生成器は `yy` を含むパターンを表に入れない（`tools/CldrTableGen/DateTables.cs` の `CheckPattern`。CLDR 49 の 41 個のスケルトンの書式に `yy` は無い）。窓はどの公開の API からも届かないので、作らない。`intl` の窓の「今」のための `TimeProvider` の引数も、`TryParse` に持たない。
     - Flutter の `parseStrict` は、読んだ後に文字が残るか、欄の値が日付として正しくなければ失敗する（`lib/src/intl/date_format.dart` 445〜446・464〜481 行目）。上の厳しい読み方と同じである。
+  - **区切り、午前と午後、全角の記号（Issue #906 の実装の 7 つ目の Grill でオーナーが決定）:** `intl` の厳しい読み方は、区切りも午前と午後の文字も、生成した文字とそのまま比べる（`date_format_field.dart` 55〜57 行目の `parseLiteral`、472〜486 行目の `parseEnumeratedString`）。XylemUI は、次の 3 点でそれより緩く読む
+    - 区切りは、上の数値の解析と同じ規則で読む。空白の区切りには U+0020・U+00A0・U+202F のどれか 1 つが当たり、双方向の印（U+200E・U+200F・U+061C）は読み飛ばし、前後の空白は切る。ほかの区切りは、パターンの順のとおりに同じ文字を求める。`en` の時刻（生成した文字では `1:05` と `PM` の間が U+202F）に、普通の空白を打っても読める
+    - 午前と午後は、大文字と小文字を区別せずに序数で比べる（ICU の `matchString` と .NET の `TryParseExact` と同じ。`InvariantGlobalization` の下でも動く）。受けるのは、パターンが書く略の形だけで、広い形と狭い形は受けない
+    - 全角の記号（U+FF01〜U+FF5E）は対応する ASCII として、全角の空白（U+3000）は空白として比べる。全角の数字を受ける理由（IME の入力と貼り付け）が、区切りの記号にもそのまま当てはまる（`ja` の `２０２６／１１／１４`、`１３：０５`）。比べた 3 つ（`intl`・ICU・.NET）は読まない
+  - **時の欄と結果（同じ Grill で、エージェントが比べた形から決めた）:** パターンの `h` は 1〜12 を受けて午前・午後の印を求め、12 時の午前を 0 時にする（`intl` の `parse1To12Hours`、562 行目）。`H` は 0〜23 である。24 時間表示でない書式に `13:05` は読まない。`intl` の `verify`（`date_builder.dart` 113〜118 行目）は 24 時間に直した時を 0〜23 で確かめるだけで `13:05 AM` を通すが、XylemUI は `h` を 1〜12 に限る。日時の結果は `Kind` が `Unspecified`、秒は 0 で、夏時間の飛ぶ時刻は確かめない（書式は時間帯を変換しないため。`intl` の `verify` は地方時に直して比べる）
+  - **生成器の止め:** `"yMd"` に数字の `y`・`M`・`d` 以外の欄があるロケールか、`"jm"` に `h`・`H`・`m`・`a` 以外の欄があるロケールでは、CldrTableGen が止まる。解析が読めない欄を表に入れないためである
 - **時間帯:** Flutter の 41 個には、時間帯を出す 4 個（`jmv`、`jmz`、`jv`、`jz`）がある。名前は出さず、GMT からの差を出す（下の「範囲に足したもの」）。
 
 **確保とスレッド:**
@@ -3890,7 +3897,7 @@ public static partial class Localization
 - **時間帯の 4 個のスケルトン（`jmv`、`jmz`、`jv`、`jz`）:** ロケールの `gmtFormat` と `hourFormat` で、短い形の GMT からの差（「GMT+9」）を出す。時間帯の名前（metazone）は入れない。UTS #35 第 4 部は、`z` と `v` の書式が名前を持たない時に、短い形の GMT からの差に落とすと書く（`v` は地域の名前を経て落ちる）。名前を入れない XylemUI の結果は、その落ちた先と同じである。差を出すので、この 4 個は `DateTimeOffset` だけを受け、`DateTime`、`DateOnly`、`TimeOnly` では `ArgumentException` である。
   - **差 0（Issue #906 でオーナーが決定）:** 差 0 は、正の差のパターンで書く。短い形は `GMT+0`、長い形は `GMT+00:00` で、`fi` と `fr` は `UTC+0` である。ICU 78 の `TimeZoneFormat::formatOffsetLocalizedGMT` と同じである。UTS #35 第 4 部（CLDR 49 の版）の例にも「GMT+00:00」と「UTC+0」がある。
   - **短い形と長い形:** 短い形は時を詰めて書き、分が 0 なら、`hourFormat` の時より後ろ（区切り、分、その後ろの文字）を省く（`GMT+9`、`GMT+5:30`、`fi` の `UTC+5.30`）。ICU の `TimeZoneFormat::truncateOffsetPattern` が `hourFormat` を時の後ろで切るのと同じで、`he` の負の差（`-HH:mm` の後ろに U+200E）の `-8` には、その U+200E が付かない。長い形（`zzzz`、`vvvv`）は、`hourFormat` が `H` でも `HH` でも、時を 2 桁で書く（`GMT+09:00`。`cs` の `+H:mm` も `GMT+09:00`、`fi` の `+H.mm` は `UTC+09.00`）。ICU の `TimeZoneFormat::formatOffsetLocalizedGMT` と同じである（Issue #906 でオーナーが決定）。`vvvv` も長い GMT の形にする（同じ決定）。数字はロケールの既定の数字である。
-- **2 桁の年:** 上の「短い日付の解析」の中に書いた。
+- **2 桁の年:** 上の「短い日付の解析」の中に書いた（`yy` の窓は持たない）。
 
 **実装の前に測ること（行 LC2 の手順。Issue #880 の Grill でオーナーが決定）:**
 
@@ -4069,12 +4076,11 @@ public sealed class DateFormatter
 
     public string Format(DateTime value);          // string を作る。フレームの経路では使わない
 
-    // "yMd" の書式だけ。ほかは InvalidOperationException。確保しない。
-    // 2 桁の年（yy）の窓は timeProvider の今で決める。null は TimeProvider.System
-    public bool TryParse(ReadOnlySpan<char> text, out DateOnly value, TimeProvider? timeProvider = null);
+    // "yMd" の書式だけ。ほかは InvalidOperationException。確保しない
+    public bool TryParse(ReadOnlySpan<char> text, out DateOnly value);
 
-    // "yMd" と "jm" をつないだ書式（FromSkeletons）だけ。ほかは InvalidOperationException
-    public bool TryParse(ReadOnlySpan<char> text, out DateTime value, TimeProvider? timeProvider = null);
+    // "yMd" と "jm" をつないだ書式（FromSkeletons）だけ。ほかは InvalidOperationException。確保しない
+    public bool TryParse(ReadOnlySpan<char> text, out DateTime value);
 }
 
 // 書式と値の組。TryFormat は書式の TryFormat を呼び、format と provider は見ない。
@@ -4114,7 +4120,8 @@ public sealed class DateNames
 - **数値の解析:** 全部のロケールで、書式の出した文字を読むと元の値に戻る。桁区切りの無い文字、ASCII の数字、U+0020 ともう一方の空白の桁区切り（`fr`、`ru`、`pl`）、マイナスの記号、読めない文字（`false`）を確かめる。
 - **日付と時刻:** 41 個のスケルトンを、決めた日時で `en`、`ja`、`ko`、`de`、`ar` について出し、期待値と比べる。`j` のスケルトンは `use24HourFormat` の `true` と `false` の両方で、`en`（既定は 12 時間）と `ja`（既定は 24 時間）を確かめる。短い日付の解析は、全部のロケールで、出した文字を読むと元の日付に戻ること、存在しない日と書式に合わない文字が `false` であることを確かめる。
 - **範囲に足したもの:** 期間の書式は、違う欄が日・月・年・時・分の時、同じ鍵の項目が無く近い骨格を使う時（`en` の `yMMMMd` は `January 3 – 9, 2026`）、近い骨格が無く `intervalFormatFallback` に落ちる時、時刻だけの骨格で日が違う時、骨格より小さい欄だけが違う時を、`en` と `ja` で、ICU の出力を書き写した期待値と比べる。つないだ書式は、`full`・`long`・`medium`・`short` の 4 つが選ばれる日付のスケルトンで確かめる。日時の解析は、出した文字を読むと元に戻ること。週の番号は、`minDays` が 1 と 4 の地域で、年の初めと終わりの週（前の年の最後の週、53 週の年）を確かめる。週末は、週末の違う地域を確かめる。固定した版（cldr-json 49.0.0 の `cldr-core/supplemental/weekData.json`）では、`IN` は日曜だけ（`weekendStart` が日曜、`weekendEnd` は `001` の日曜）、`SA` は金曜から土曜、`AF` は木曜から金曜（`ps` の推定した地域）で、木曜から始まるのは `AF` だけである。UTS #35 第 4 部の「Week Data」の例は、`weekendStart` が木曜の地域に `SA` を挙げるが、これは説明の例で、固定した版の値ではない（PR #925 でオーナーが決定）。通貨は、標準と narrow の記号を確かめる。時間帯の 4 個のスケルトンは、差が 0、正、負、分を含む（`+05:30`）時の GMT の形と、`DateTime` を渡すと `ArgumentException` であることを確かめる。
-- **年の読み方:** `yy` の書式で、窓の両端（20 年後のちょうどの日は含み、80 年前のちょうどの日は含まない）を、仮想の時計（`FakeTimeProvider`）で確かめる。`y` の書式で `26` が 26 年になることも確かめる。
+- **年の読み方:** `y` の書式で `26` が 26 年になることを確かめる。
+- **区切り、午前と午後、全角の記号:** `en` の時刻を、U+202F でなく U+0020 と U+00A0 で打っても読めること、`ar` の `"yMd"` の文字から双方向の印を外しても読めること、`pm` と `PM` が同じに読めること、`ja` の `２０２６／１１／１４` と `１３：０５` が読めることを確かめる。`h` に 13 や 0 を打った文字、24 時間表示でない書式に `13:05` を打った文字は `false` である。
 - **全角の数字と別名:** 数値の解析、短い日付の解析、日時の文字の解析が、全角の数字を ASCII の数字として読む（`ja` の `２０２６/１１/１４` が 2026 年 11 月 14 日になる）。全角と ASCII の混ざった文字も読む。`CldrLocales.Nb` は `nb` 自身の表で、OS の `nb-NO` に解決される。`CldrLocales.Tl` の `Locale` は `tl` で、OS の `tl-PH` に解決され、書式は `fil` の表で出る。
 - **推定と解決:** UTS #35 の節の例（`zh-TW`、`zh`、`zh-HK`、`zh-SG` は `zh-Hans-SG`）と、上の「解決」の例（`zh-TW`、`sr-ME`、`zh-Hant-HK`、推定した文字体系が同じなら LC1 と同じ結果になる `fr-CA`・`de-AT`）。LC1 の解決のテストは、変えずに通る。
 - **表の無い時:** 何も宣言しないヘッドレスのアプリで、`Localization.Data` が `root` の表になる。`WithLocale` で付けたタグが、解決と文字の言語に使われ、書式は元の表で出る。
@@ -5061,7 +5068,7 @@ internal interface IAccessibilityBridge
 
 ### 6.0 共通Platform Contract
 
-OS ごとの機能（窓、ループ、フレームの時計、描画、文字、IME、クリップボード、a11y、OS の設定）を、Core に置く 2 段の契約にまとめる。`XylemUI.Desktop` は契約だけを通して OS のホストを使い、Win32・D3D11・DirectWrite・TSF・AccessKit の型を直に作らない。行 PL1 で入れ、Windows のホストだけを書く（行 P04・P06 の前）。行 PL1 の前は、`DesktopWindow` が Windows の型をつないでいた。4a（Issue #928）から `XylemUI.Desktop` は契約を通して窓を開くが、まだ `net10.0-windows10.0.17763.0` で、Windows のホスト（`Win32PlatformApp`）と `DirectWriteFontProvider` を直に作り、macOS と Linux のホストを差し込む口が無い（下の実装の PR 6 と 7 で直す）。
+OS ごとの機能（窓、ループ、フレームの時計、描画、文字、IME、クリップボード、a11y、OS の設定）を、Core に置く 2 段の契約にまとめる。`XylemUI.Desktop` は契約だけを通して OS のホストを使い、Win32・D3D11・DirectWrite・TSF・AccessKit の型を直に作らない。行 PL1 で入れ、Windows のホストだけを書く（行 P04・P06 の前）。行 PL1 の前は、`DesktopWindow` が Windows の型をつないでいた。4a（Issue #928）から `XylemUI.Desktop` は契約を通して窓を開き、6 つ目の実装の PR（Issue #959）からフォントの提供者とグリフのラスタライザもホストから引く。それでもまだ `net10.0-windows10.0.17763.0` で、Windows のホスト（`Win32PlatformApp`）を直に作り、macOS と Linux のホストを差し込む口が無い（下の実装の PR 7 で直す）。
 
 **決まったこと（行 PL1 の Grill の 5 巡目でオーナーが決定、Issue #872）:**
 
@@ -5071,7 +5078,7 @@ OS ごとの機能（窓、ループ、フレームの時計、描画、文字�
 - **ループ:** `Run`・`Quit`・`Wake` はホストが持つ。取り出し（`UiDispatcher.Drain`）は今どおり Core の呼び出しで、ループが毎回呼ぶ（§2.12）
 - **スケジューラ:** 契約はウィンドウごと（`IPlatformWindow.FrameScheduler`）、Windows の実装はループごと（今の `Win32FrameScheduler` の 1 つ）にする
 - **OS の設定:** アプリの段の 1 つのオブジェクト（`IPlatformSettings`）にする。文字の描き方（`TextRenderingParameters`）だけはウィンドウごとに持つ。窓のモニタごとに読むためである（§5.0.3「ClearType」の「読む単位と時機」、§6.1.1）
-- **フォントの提供者:** 寿命は UI スレッドと同じ（§3.2「整形の道具は UI スレッドに 1 つ」のとおり）。今のコードは窓ごとに作るので、直す
+- **フォントの提供者:** 寿命は UI スレッドと同じ（§3.2「整形の道具は UI スレッドに 1 つ」のとおり）。行 PL1 の前のコードは窓ごとに作っていた。6 つ目の実装の PR（Issue #959）から、ホストが 1 つ持つ
 - **契約の形:** インターフェースと sealed の実装にする。前後を測る（下の「測ること」）
 - **置き場所と選び方:** 契約は Core に置く。ホストはビルド時に RID で選ぶ（§2.9.1）
 - **窓の核:** `HeadlessApp` と本物の窓は、1 つの窓の核（`WindowCore`）を共有する
@@ -5117,7 +5124,7 @@ OS ごとの機能（窓、ループ、フレームの時計、描画、文字�
 - **PR 5 までの OS の設定（PR 5、Issue #945 で替えた）:** 4a と行 LC2 の実装の 3 つ目では、設定はまだ窓ごとの値（`Win32Window` の `ReducesMotion`・`TextEditing`・`UiLanguages`・`Use24HourFormat`）で、`Win32PlatformWindow.Attach` が今の値を木に渡し、変わった知らせを窓の核（`SetSystemLocales`・`SetUse24HourFormat`）につないでいた。最初の `Mount` に渡す OS の言語と 24 時間表示は、具体のホストの internal のメンバー（`Win32PlatformApp.UiLanguages`・`Use24HourFormat`。開いている窓が読んだ値）から読んでいた。PR 5 で、アプリの段の 1 つのオブジェクト（`IPlatformSettings`。Windows は `Win32PlatformSettings`）に替え、これらの値、知らせ、つなぎ、internal のメンバー、窓の核の 2 つのメソッド、`Mount` の 2 つの引数を外した。今の形は下の「機能ごとの置き場所」の「OS の設定」である
 - **窓の核の寿命:** 窓の核は `Connect` から窓とアトラスを持ち（`Connect` が投げた時も持つ）、自分の `Dispose` で、フレームを取り消し、根を捨て、窓、アトラスの順に捨てる。`WindowClosed` はフレームを取り消し、根を捨て、`Closed` を上げる。`DisposeRoot` はフレームを取り消さない。`HeadlessApp.AssertNoLeakedScopes` は根を捨てた後に、残ったフレームを回すためである
 - **開いている窓の数え方:** 2 つ目の `OpenWindow` を投げる間の「開いている」は、窓を捨てるまでを言う。時計をタイマーに戻すのは窓の `Dispose` だからである（Issue #928 でオーナーが決定）
-- **本物の窓のテスト:** `XylemApp.Run` と同じ作る順（`XylemApp.OpenWindow`）を通す。テストのホスト（`XylemUI.Desktop.Tests` の `TestHost`）は Windows の窓（`Win32PlatformWindow`）を WARP で開き、2 つ目の窓を確かめず、ディスパッチャ、`SynchronizationContext`、OLE を置かない（行 PL1 の前の `DesktopWindow` と同じ。Issue #928 でオーナーが決定）
+- **本物の窓のテスト:** `XylemApp.Run` と同じ作る順（`XylemApp.OpenWindow`）を通す。テストのホスト（`XylemUI.Desktop.Tests` の `TestHost`）は Windows の窓（`Win32PlatformWindow`）を WARP で開き、2 つ目の窓を確かめず、ディスパッチャ、`SynchronizationContext`、OLE を置かない（行 PL1 の前の `DesktopWindow` と同じ。Issue #928 でオーナーが決定）。フォントの提供者はテストのホストが持ち、テストの窓（`TestWindow`）がホストを持って、`TextContext` の後に捨てる（Issue #959）
 
 ```csharp
 // XylemUI.Core（src/XylemUI.Core/Platform/、internal。ホストには InternalsVisibleTo で見せる）
@@ -5196,7 +5203,7 @@ internal sealed class WindowCore : IDisposable
     // wrapper はテーマの根の包み（§13.2「根で置くもの」）。デスクトップのホストは WindowRoot.ReadWrapper() を、HeadlessApp は
     // HeadlessOptions.RootWrapper を渡し、null なら包まない。appearance は OS の見た目の今の値（§13.2「OS の見た目」）。
     // ロケール、OS の見た目、WindowSurface を置いた内側で包みを呼び、その中で根の関数を呼ぶ（行 TH1 の 2 つ目の PR。Issue #907 でオーナーが決定）。
-    // 行 PL1 の 5 つ目の PR までは、OS の言語の一覧（systemLocales）も引数で受ける
+    // 行 PL1 の 5 つ目の PR の前は、OS の言語の一覧（systemLocales）も引数で受けていた
     public void Mount(Func<Element> root, Func<Func<Element>, Element>? wrapper, SystemAppearance appearance, string scopeName, Size size, float scale);
     public WindowSurface Surface { get; }      // 根で置く窓の口。受けた最後の値を持つ（§13.2「根の箱」）
 
@@ -5227,7 +5234,7 @@ public static class Win32Host
     public static void Register();   // PlatformHostRegistry.Factory = static () => new Win32PlatformApp();
 }
 
-internal sealed class Win32PlatformApp : IPlatformApp { }        // Win32MessageLoop（静的）を呼ぶ。OLE の初期化と戻し
+internal sealed class Win32PlatformApp : IPlatformApp { }        // Win32MessageLoop（静的）を呼ぶ。OLE の初期化と戻し。DirectWriteFontProvider を持つ
 internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window・D3D11Renderer・TsfTextInput・Win32Accessibility の組
 ```
 
@@ -5237,8 +5244,8 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 - **ループ、ディスパッチャ、アプリの寿命（アプリの段）:** `IPlatformApp` の `Run`・`Quit`・`Wake`・`Dispatcher`。Windows では `Win32PlatformApp`（sealed）が今の `Win32MessageLoop`（静的。UI スレッドはプロセスに 1 つなので、ループごとの実装になる）を呼ぶ。OLE の初期化（§7「タッチとペン」の「COM の初期化」）は `XylemApp.Run` から `Win32PlatformApp` に移し、作る時に呼び、捨てる時に戻す。コールバックの例外の受け口（`Win32MessageLoop.CallbackExceptionHandler`）は Windows のホストの中に残し、契約に入れない（`XylemUI.Desktop` は使っていない）。最後の窓を閉じたらループを終える数え方は OS によらないので `XylemApp` に残し、`Quit` だけを契約で呼ぶ。行 MW1 で、数え方は Core の `AppCore` に移り、終わり方のモードに従う（§6.0.1「アプリが終わる時」）
 - **フレームの時計とスケジューラ（契約はウィンドウの段、Windows の実装はループごと）:** `IPlatformWindow.FrameScheduler`。Windows の窓は、ループの 1 つの `Win32FrameScheduler` を返す。スワップチェーンの待機オブジェクトを時計にする `Win32MessageLoop.SetFrameClock`（§2.11 の S7 と「遅く描き始めるフレーム」）は、ホストがレンダラを作った所で呼び、窓を捨てる時に、レンダラが待機オブジェクトを閉じる前に 0 に戻す。窓の核と `XylemUI.Desktop` は時計を見ない。今のスケジューラは時計を 1 つしか持たず、2 つ目の窓が開くと前の窓の時計を置き換えるので、窓が開いている間の 2 つ目の `OpenWindow` は投げる（上の「形の決まったこと」）。窓ごとの予約は行 MW1 で入れる（§6.0.1「フレームの段」）
 - **レンダラ、Present、同期のリサイズ（ウィンドウの段。ホストの中で組にする）:** 窓の核が見るのは `IRenderTarget`（`Draw`・`Present`）だけである。ホストが `D3D11Renderer` を作り（窓を見せた後、§2.13「ウィンドウ」）、窓のモニタの文字の描き方を渡す。`WM_SIZE` の同期の描画では、ホストがレンダラの大きさを変えてから、物理画素の大きさを倍率で割り、窓の核の `Resize(size, scale)` を呼ぶ（§2.11.1）。割る所はホスト（`Win32PlatformWindow` の `Render`。行 PL1 の前の `DesktopWindow.Render` と同じ）にあり、窓の核は `Win32Window.ScaleFactor` を読まない。`HeadlessApp` は今と同じく論理画素の大きさをそのまま渡す。ガード（`SynchronousRenderGuard`）に入るのは今どおり `Win32Window` である
-- **グリフのラスタライザとアトラス（アプリの段）:** `IPlatformApp.CreateRasterizer`。アトラスは OS によらない CPU のページで、レンダラが `DirtyRegions` を読んで送る（§5.0.3）ので、契約は要らない。アトラスは今と同じく窓ごとに 1 つで、窓の核が持つ。複数のレンダラでの共有は、行 MW1 が行 P10 から引き取り、Todo の sample を 2 つと 4 つ開いて測ってから決める（§6.0.1「デバイス、アトラス、資源」）
-- **フォントの提供者（アプリの段）:** `IPlatformApp.Fonts`。`XylemApp.Run` が UI スレッドに 1 つの `TextContext` を作って窓の核に渡し、ループを抜けたら捨てる。4a（Issue #928）の `XylemApp.Run` は、`DirectWriteFontProvider` を 1 回の走りに 1 つ直に作り、それで `TextContext` を作って、ループを抜けたら窓の核の後に捨てる（行 PL1 の前は、`DesktopWindow` が窓ごとに作っていた）。提供者を `IPlatformApp.Fonts` から引くのは 6 つ目の実装の PR である。窓が 1 つの間は、振る舞いは変わらない
+- **グリフのラスタライザとアトラス（アプリの段）:** `IPlatformApp.CreateRasterizer`。呼ぶたびに新しいラスタライザを返す。`XylemApp.OpenWindow` はこれを窓のアトラスに渡し、アトラスは UI スレッドで自分とワーカーの分を作り、自分の `Dispose` で捨てる。`HeadlessApp` はレンダラが作った 1 つをアトラスに渡し、アトラスはそれを捨てないので、アプリがアトラスの後、レンダラの前に捨てる（6 つ目の実装の PR、Issue #959）。アトラスは OS によらない CPU のページで、レンダラが `DirtyRegions` を読んで送る（§5.0.3）ので、契約は要らない。アトラスは今と同じく窓ごとに 1 つで、窓の核が持つ。複数のレンダラでの共有は、行 MW1 が行 P10 から引き取り、Todo の sample を 2 つと 4 つ開いて測ってから決める（§6.0.1「デバイス、アトラス、資源」）
+- **フォントの提供者（アプリの段）:** `IPlatformApp.Fonts`。`XylemApp.Run` が UI スレッドに 1 つの `TextContext` を作って窓の核に渡し、ループを抜けたら捨てる。提供者はホストが作る時に作り、捨てる時に捨てる（Windows は `Win32PlatformApp` の `DirectWriteFontProvider`。OLE を初期化する前に作るので、作れなければ何も戻さなくてよい）。`TextContext` はホストより先に捨てるので、捨てた提供者を読む物は残らない。4a（Issue #928）から 5 つ目の実装の PR までの `XylemApp.Run` は、`DirectWriteFontProvider` を 1 回の走りに 1 つ直に作り、それで `TextContext` を作って、ループを抜けたら窓の核の後に捨てていた（行 PL1 の前は、`DesktopWindow` が窓ごとに作っていた）。提供者を `IPlatformApp.Fonts` から引くのは 6 つ目の実装の PR（Issue #959）からである。窓が 1 つの間は、振る舞いは変わらない
 - **文字の入力と IME（ウィンドウの段）:** `IPlatformWindow.TextInput`（旧版の `IPlatform` はアプリの段に置いていた）。Windows の `TsfTextInput` は窓に結び付き（`AssociateFocus`）、窓を壊す前に放す（スパイク #510）。タッチキーボード（`ITouchKeyboard`）もこの中にある
 - **クリップボード（アプリの段）:** `IPlatformApp.Clipboard`。クリップボードは OS に 1 つである。行 PL1 の前の `Win32Clipboard` は `OpenClipboard` に渡す持ち主として窓を取った（`Win32Clipboard(Win32Window)`）。4a で、クリップボード専用のメッセージ専用の窓（`XylemUI.Clipboard`）に替えた。ループの起床の窓は使わない（Issue #928 でオーナーが決定。上の「4a の形」）。窓を開かずに読み書きできることと、持ち主がその窓であることは、`TextEditingPlatformTests` で確かめる
 - **ドラッグ＆ドロップ（ウィンドウの段）:** 契約を足さない。OS への持ち出しは `IPointerPlatform.StartExternalDrag`、OS からのドロップは窓の核の `Input`（`IExternalDropTarget`）が受ける（§7「ドラッグ＆ドロップ」）。`DoDragDrop` の間のフレーム（`Win32MessageLoop.RunPendingFrame`、§2.11.1）は Windows のホストの中に残る
@@ -5256,7 +5263,7 @@ internal sealed class Win32PlatformWindow : IPlatformWindow { }  // Win32Window�
 
 **窓の核（`WindowCore`）が持つもの:** 木（`UiTree`）、根のノード、`WindowFrames`、`WindowInput`、窓のアトラス、ロケールの根の値（`WindowLocale`、行 LC1）と行 TH1 のテーマの根の値、根の関数を呼ぶ `Mount`、最初のフレーム、閉じた時の `DisposeRoot`（木の `FrameNeeded` を外し、`CancelFrame` を呼び、根の Scope を破棄し、画像のキャッシュを放す、§5.0.4）、OS の設定を木に渡すこと。行 PL1 の前は、`DesktopWindow` と `HeadlessApp` が `Mount` をほぼ同じコードで 2 つ持ち、根の値も 2 か所で置いていた（1 つ目の実装の PR で窓の核に移した）。窓の核は Core に置くので、`XylemUI.Testing` は `XylemUI.Desktop` を参照しなくてよい（Core の internal は IVT で見えている）。
 
-**ホストが持つもの:** OS の窓、レンダラとその時計、IME、a11y の adapter、クリップボード、OS の設定と、それぞれを作る順と壊す順である。壊す順は行 PL1 の前の `DesktopWindow.Dispose` のとおり（4a の `Win32PlatformWindow.Dispose`）で、TSF は窓を壊す前に放し、a11y の provider を先に外し、ループはレンダラが待機オブジェクトを閉じる前に時計を待たなくなる。
+**ホストが持つもの:** OS の窓、レンダラとその時計、IME、a11y の adapter、クリップボード、OS の設定、フォントの提供者と、それぞれを作る順と壊す順である。壊す順は行 PL1 の前の `DesktopWindow.Dispose` のとおり（4a の `Win32PlatformWindow.Dispose`）で、TSF は窓を壊す前に放し、a11y の provider を先に外し、ループはレンダラが待機オブジェクトを閉じる前に時計を待たなくなる。
 
 **作る順（`XylemApp.Run`）:** 行 PL1 の前の `XylemApp.Run` と `DesktopWindow` のコンストラクタの順を保つ。手順 4〜7 は `XylemApp.OpenWindow` で、本物の窓のテストも通る（4a）。§2.13「ウィンドウ」はここを指す。
 

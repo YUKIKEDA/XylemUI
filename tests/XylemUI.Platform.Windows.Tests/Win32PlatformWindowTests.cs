@@ -86,7 +86,7 @@ public sealed class Win32PlatformWindowTests(UiThreadFixture ui)
             };
             using var core = new WindowCore(null, app.Settings, app.Clipboard, null, null);
             var window = (Win32PlatformWindow)app.OpenWindow(core, "wrapped", 200, 100, show: false);
-            core.Connect(window, new GlyphAtlas(static () => new DirectWriteGlyphRasterizer(), threads: 1), Color.FromRgb(0xFFFFFF));
+            core.Connect(window, new GlyphAtlas(app.CreateRasterizer, threads: 1), Color.FromRgb(0xFFFFFF));
             window.Attach();
             (int width, int height) = window.ClientSize;
             float scale = window.ScaleFactor;

@@ -30,7 +30,8 @@ internal sealed class TextLeaf
     public ReadOnlySpan<char> Text => Buffer.AsSpan(0, Length);
 
     /// <summary>
-    /// Gets the style.
+    /// Gets the style: the one the leaf takes, resolved from its own fields and its ancestors' (design §3.2, "The text style a
+    /// container gives"). The layout and the draw stage read it alone.
     /// </summary>
     public TextStyle Style { get; private set; }
 

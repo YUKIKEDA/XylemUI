@@ -1,9 +1,11 @@
 using TerraFX.Interop.Windows;
+using XylemUI.Text;
 
 namespace XylemUI.Platform.Windows.Tests;
 
 // The app tier of the Windows host (row PL1, design §6.0): the loop's contract, the dispatcher and the synchronization context it
-// sets and puts back, and OLE, which it initializes when made and uninitializes when disposed. The tests that run the loop wait in
+// sets and puts back, OLE, which it initializes when made and uninitializes when disposed, the fonts it owns, and the rasterizers it
+// makes. The tests that run the loop wait in
 // real time under a watchdog (.cursor/rules/testing.mdc).
 [Collection(UiThreadGroup.Name)]
 public sealed class Win32PlatformAppTests(UiThreadFixture ui)
@@ -242,7 +244,8 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
     ///   The UI thread is the headless session's, which set <see cref="UiDispatcher.Current"/> to its dispatcher.
     ///
     /// Steps:
-    /// - Read <see cref="UiDispatcher.Current"/>. On the new thread, make the host; then read the thread's context, and how many
+    /// - Run an empty action on the UI thread, which starts the session when no test of the group has. Read
+    ///   <see cref="UiDispatcher.Current"/>. On the new thread, make the host; then read the thread's context, and how many
     ///   OLE initializations of that thread are not yet balanced (<c>Com.UiThreadInitializations</c>, 0 on a new thread). Read
     ///   <see cref="UiDispatcher.Current"/> again.
     ///
@@ -253,6 +256,8 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
     [Fact]
     public void Constructor_OffTheUiThread_ThrowsAndChangesNothing()
     {
+        // The fixture starts the session at its first Invoke; when this test is the first of the group, no dispatcher is set yet.
+        ui.Invoke(static () => { });
         IUiDispatcher before = UiDispatcher.Current;
         Exception? thrown = null;
         SynchronizationContext? context = new();
@@ -397,6 +402,91 @@ public sealed class Win32PlatformAppTests(UiThreadFixture ui)
 
             Assert.False(watchdog.Expired);
             Assert.Equal(0, code);
+        });
+
+    /// <summary>
+    /// The host's fonts are one provider for the UI thread (design §3.2; §6.0, "The font provider"): the same object before, while,
+    /// and after each of two windows is open, still usable after a window is disposed, and disposed with the host.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A Windows host whose windows draw on WARP, and two window cores.
+    ///
+    /// Steps:
+    /// - Read the host's fonts. Open a hidden window for the first core and read them; dispose it. Open one for the second core
+    ///   and read them; dispose it. Resolve the font of "Abc" with the fonts read first. Dispose the host, then resolve it again.
+    ///
+    /// Expected:
+    /// - Every read is the same object, a <see cref="DirectWriteFontProvider"/>.
+    /// - The resolve after the windows were disposed covers the three characters.
+    /// - The resolve after the host was disposed throws <see cref="ObjectDisposedException"/>.
+    /// </remarks>
+    [Fact]
+    public void Fonts_AreOneProviderAcrossTwoWindows_AndAreDisposedWithTheHost() =>
+        ui.Invoke(() =>
+        {
+            var app = new Win32PlatformApp { UseWarp = true };
+            IFontProvider first;
+            IFontProvider whileFirst;
+            IFontProvider whileSecond;
+            IFontProvider afterBoth;
+            FontMatch match;
+            try
+            {
+                using var firstCore = new WindowCore(null, app.Settings, app.Clipboard, null, null);
+                using var secondCore = new WindowCore(null, app.Settings, app.Clipboard, null, null);
+                first = app.Fonts;
+                IPlatformWindow window = app.OpenWindow(firstCore, "first", 200, 100, show: false);
+                whileFirst = app.Fonts;
+                window.Dispose();
+                window = app.OpenWindow(secondCore, "second", 200, 100, show: false);
+                whileSecond = app.Fonts;
+                window.Dispose();
+                afterBoth = app.Fonts;
+                match = first.ResolveFont("Abc", 0, TextLanguage.FromTag("en"), FontRequest.Default);
+            }
+            finally
+            {
+                app.Dispose();
+            }
+
+            Exception? afterHost = Record(() => first.ResolveFont("Abc", 0, TextLanguage.FromTag("en"), FontRequest.Default));
+
+            _ = Assert.IsType<DirectWriteFontProvider>(first);
+            Assert.Same(first, whileFirst);
+            Assert.Same(first, whileSecond);
+            Assert.Same(first, afterBoth);
+            Assert.Equal(3, match.Length);
+            _ = Assert.IsType<ObjectDisposedException>(afterHost);
+        });
+
+    /// <summary>
+    /// <see cref="Win32PlatformApp.CreateRasterizer"/> makes a new DirectWrite rasterizer on each call, so that each thread of a
+    /// window's glyph atlas has its own (design §5.0.3, "Glyphs seen for the first time").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - A Windows host on the UI thread.
+    ///
+    /// Steps:
+    /// - Call <see cref="Win32PlatformApp.CreateRasterizer"/> twice; dispose both rasterizers.
+    ///
+    /// Expected:
+    /// - Both are <see cref="DirectWriteGlyphRasterizer"/>, and they are not the same object.
+    /// </remarks>
+    [Fact]
+    public void CreateRasterizer_ReturnsANewRasterizerOnEachCall() =>
+        ui.Invoke(() =>
+        {
+            using var app = new Win32PlatformApp();
+            IGlyphRasterizer first = app.CreateRasterizer();
+            IGlyphRasterizer second = app.CreateRasterizer();
+            (first as IDisposable)?.Dispose();
+            (second as IDisposable)?.Dispose();
+
+            _ = Assert.IsType<DirectWriteGlyphRasterizer>(first);
+            _ = Assert.IsType<DirectWriteGlyphRasterizer>(second);
+            Assert.NotSame(first, second);
         });
 
     // Makes the host and disposes it; a helper, so that the thread that makes it off the UI thread on purpose calls no UI-thread-only
