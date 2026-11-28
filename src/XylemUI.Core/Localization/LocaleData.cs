@@ -167,6 +167,12 @@ public abstract class LocaleData
     internal abstract ReadOnlySpan<byte> DatePatternTable { get; }
 
     /// <summary>
+    /// Gets the table of how the skeletons write a range of two dates (CLDR's <c>intervalFormats</c>, design §4.11, "Interval
+    /// formats"), which <see cref="DateRangeFormat.Read"/> reads. A binary that formats no range keeps no such table.
+    /// </summary>
+    internal abstract ReadOnlySpan<byte> DateIntervalTable { get; }
+
+    /// <summary>
     /// Makes the plural rules of the tables, which <see cref="Plurals"/> keeps.
     /// </summary>
     /// <returns>The rules.</returns>
@@ -225,6 +231,8 @@ public abstract class LocaleData
         internal override ReadOnlySpan<byte> DateNameTable => _tables.DateNameTable;
 
         internal override ReadOnlySpan<byte> DatePatternTable => _tables.DatePatternTable;
+
+        internal override ReadOnlySpan<byte> DateIntervalTable => _tables.DateIntervalTable;
 
         internal override PluralRules CreatePlurals() => _tables.Plurals;
     }

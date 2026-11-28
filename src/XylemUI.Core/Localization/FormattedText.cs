@@ -1,8 +1,8 @@
 namespace XylemUI;
 
 /// <summary>
-/// Makes the string of a formatted value, for the <c>ToString</c> of <see cref="FormattedNumber"/> and <see cref="FormattedDate"/>;
-/// not for the frame path.
+/// Makes the string of a formatted value, for the <c>ToString</c> of <see cref="FormattedNumber"/>, <see cref="FormattedDate"/>, and
+/// <see cref="FormattedDateRange"/>; not for the frame path.
 /// </summary>
 internal static class FormattedText
 {
@@ -21,8 +21,9 @@ internal static class FormattedText
             return new string(buffer[..written]);
         }
 
-        // A number takes at most 999 integer and 999 fraction digits, so its text (with its group separators and affixes) is some
-        // 2,500 characters at most, and the buffer stops growing at 4,096.
+        // The buffer doubles until the text fits; every value's text has an end, so the loop ends. A number takes at most 999 integer
+        // and 999 fraction digits, so its text (with its group separators and affixes) is some 2,500 characters at most and fits by
+        // 4,096; a date's and a range's text is made of the table's strings of at most 255 bytes each.
         char[] grown = new char[256];
         while (!value.TryFormat(grown, out written, default, null))
         {

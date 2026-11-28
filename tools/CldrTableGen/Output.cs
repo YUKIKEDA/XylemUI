@@ -197,6 +197,7 @@ internal sealed class Output
         Constant(text, "int", "CurrencyTableCount", Number(_numbers.Currencies.Count), "Gets the number of distinct currency tables.");
         Constant(text, "int", "DateNameTableCount", Number(_dates.Names.Count), "Gets the number of distinct date name tables.");
         Constant(text, "int", "DatePatternTableCount", Number(_dates.Patterns.Count), "Gets the number of distinct date pattern tables.");
+        Constant(text, "int", "DateIntervalTableCount", Number(_dates.Intervals.Count), "Gets the number of distinct date interval tables.");
         Line(text, "}");
         Line(text, string.Empty);
         Line(text, "/// <summary>");
@@ -283,12 +284,15 @@ internal sealed class Output
         Line(text, "    /// <inheritdoc/>");
         Line(text, "    internal override ReadOnlySpan<byte> CurrencyTable => CldrNumberTables.Currencies" + Number(currencies) + ";");
         Line(text, string.Empty);
-        (int names, int patterns) = _dates.ByTag[entry.DataTag];
+        (int names, int patterns, int intervals) = _dates.ByTag[entry.DataTag];
         Line(text, "    /// <inheritdoc/>");
         Line(text, "    internal override ReadOnlySpan<byte> DateNameTable => CldrDateTables.Names" + Number(names) + ";");
         Line(text, string.Empty);
         Line(text, "    /// <inheritdoc/>");
         Line(text, "    internal override ReadOnlySpan<byte> DatePatternTable => CldrDateTables.Patterns" + Number(patterns) + ";");
+        Line(text, string.Empty);
+        Line(text, "    /// <inheritdoc/>");
+        Line(text, "    internal override ReadOnlySpan<byte> DateIntervalTable => CldrDateTables.Intervals" + Number(intervals) + ";");
         Line(text, string.Empty);
         Line(text, "    /// <inheritdoc/>");
         string rules = "CldrPluralRules." + cardinal.Method + ", CldrPluralRules." + ordinal.Method;
@@ -463,6 +467,8 @@ internal sealed class Output
         TableList(text, "Names", "Gets the date names of ", _dates.Names, names);
         IEnumerable<(string, int)> patterns = _dates.ByTag.Select(pair => (pair.Key, pair.Value.Patterns));
         TableList(text, "Patterns", "Gets the date patterns of ", _dates.Patterns, patterns);
+        IEnumerable<(string, int)> intervals = _dates.ByTag.Select(pair => (pair.Key, pair.Value.Intervals));
+        TableList(text, "Intervals", "Gets the date interval patterns of ", _dates.Intervals, intervals);
         Line(text, "}");
         return text.ToString();
     }

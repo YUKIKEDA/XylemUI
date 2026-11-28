@@ -218,4 +218,22 @@ internal static class ThrowHelper
     [DoesNotReturn]
     [StackTraceHidden]
     internal static void ThrowDateValueNotTaken(string message, string parameterName) => throw new ArgumentException(message, parameterName);
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> when a range is formatted with a date skeleton joined with a time skeleton,
+    /// which CLDR's <c>intervalFormats</c> have no patterns for.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowJoinedFormatRange() =>
+        throw new InvalidOperationException(
+            "A date skeleton joined with a time skeleton does not format ranges; only a format of one skeleton (FromSkeleton) does."
+        );
+
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> for a range whose start is after its end.
+    /// </summary>
+    [DoesNotReturn]
+    [StackTraceHidden]
+    internal static void ThrowRangeStartAfterEnd() => throw new ArgumentException("The range's start is after its end.", "start");
 }

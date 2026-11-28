@@ -127,7 +127,15 @@ static async Task<int> Run(string[] args)
             + Output.Number(numbers.DefaultCurrencyDigits)
             + " fraction digits"
     );
-    Console.WriteLine("date tables: " + Output.Number(dates.Names.Count) + " name, " + Output.Number(dates.Patterns.Count) + " pattern");
+    Console.WriteLine(
+        "date tables: "
+            + Output.Number(dates.Names.Count)
+            + " name, "
+            + Output.Number(dates.Patterns.Count)
+            + " pattern, "
+            + Output.Number(dates.Intervals.Count)
+            + " interval"
+    );
     Console.WriteLine("wrote " + outRoot);
     return 0;
 }

@@ -19,12 +19,36 @@ public sealed class CldrTableGenTests
     private const char Infinity = (char)0x221E;
     private const char CurrencySign = (char)0x00A4;
     private const char YenSign = (char)0x00A5;
+    private const char EnDash = (char)0x2013;
+
+    // The entries of an interval table (tools/CldrTableGen/DateTables.cs) that the interval tests read: the skeletons' places among
+    // the 37 without a time zone, and the 24-hour jm after them.
+    private const int DEntry = 0;
+    private const int EEntry = 1;
+    private const int LllEntry = 3;
+    private const int MEdEntry = 7;
+    private const int QqqEntry = 14;
+    private const int YEntry = 16;
+    private const int YMMMdEntry = 21;
+    private const int YMMMMdEntry = 24;
+    private const int HmEntry = 29;
+    private const int HmsEntry = 30;
+    private const int JmEntry = 32;
+    private const int Jm24Entry = 38;
 
     // currencyData.json: BHD has 3 fraction digits, JPY 0, CHF the default 2 with a cash rounding the tool does not read.
     private const string CurrencyData =
         "{ \"supplemental\": { \"currencyData\": { \"fractions\": { \"BHD\": { \"_rounding\": \"0\", \"_digits\": \"3\" }, "
         + "\"CHF\": { \"_rounding\": \"0\", \"_digits\": \"2\", \"_cashRounding\": \"5\" }, "
         + "\"DEFAULT\": { \"_rounding\": \"0\", \"_digits\": \"2\" }, \"JPY\": { \"_rounding\": \"0\", \"_digits\": \"0\" } } } } }";
+
+    // pt's dateTimeFormats-atTime, as CLDR 49's pt has them: {1} 'às' {0} for full and long, {1}, {0} for medium and short.
+    private const string PtAtTime =
+        "\"dateTimeFormats-atTime\": { \"standard\": { \"full\": \"{1} 'às' {0}\", \"long\": \"{1} 'às' {0}\", "
+        + "\"medium\": \"{1}, {0}\", \"short\": \"{1}, {0}\" } }, ";
+
+    // The separator of the interval patterns of the zip: an en dash between spaces.
+    private static readonly string Dash = " " + EnDash + " ";
 
     // The lines of CldrNumberTables.g.cs and of CldrData that the zip of these tests gives (Tool_NumberTables_HoldTheBytesOfTheData),
     // with the bytes counted by hand from the strings of NumbersJson, CurrenciesJson, and CurrencyData: 48, 0 is the digit zero, 1
@@ -283,6 +307,25 @@ public sealed class CldrTableGenTests
                     "\"Time-Day-Of-Week\": \"{0} b'a' ({1})\"",
                     "The joining pattern {0} b'a' ({1}) of de has letters next to a quote."
                 },
+                {
+                    Gregorian,
+                    "\"intervalFormatFallback\": \"{1}" + Dash + "{0}\"",
+                    "\"intervalFormatFallback\": \"{1}" + Dash + "{1}\"",
+                    "The pattern {1}" + Dash + "{1} of de does not have {0} once."
+                },
+                {
+                    Gregorian,
+                    "\"intervalFormatFallback\": ",
+                    "\"-y\": { \"y\": \"y" + Dash + "y\" }, \"intervalFormatFallback\": ",
+                    "The interval skeleton -y has a character that is not a letter."
+                },
+                {
+                    Gregorian,
+                    "\"d\": \"earliestFirst:d" + Dash + "d\"",
+                    "\"d\": \"earliestFirst:\"",
+                    "The interval pattern earliestFirst: of de has nothing after its prefix."
+                },
+                { Gregorian, "\"h\": \"h a\"", "\"h\": \"K a\"", "The pattern K a of de has a field the formats do not write." },
             };
         }
     }
@@ -614,6 +657,302 @@ public sealed class CldrTableGenTests
     }
 
     /// <summary>
+    /// The interval table holds, for each skeleton and field, the pattern of the nearest interval item split in two, with its widths
+    /// made the skeleton's (design §4.11, "Interval formats"; ICU's getBestSkeleton, adjustFieldWidth, and splitPatternInto2Part): an
+    /// item of the same skeleton as it is, a nearer one widened, a field the item lacks from the item of the skeleton with the field's
+    /// letter in front, and at the same distance the item first in byte order.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: every locale's interval formats are those of IntervalJson (en dash between spaces); en's fallback
+    ///   is {0} – {1} and its hour h; pt also has MEEd and MMEd, both 1 from MEd; ja's hour is H.
+    ///
+    /// Steps:
+    /// - Run the tool, and read the interval tables of en, pt, and ja.
+    ///
+    /// Expected:
+    /// - en's fallback is {0} – {1}.
+    /// - en's yMMMd takes its item: the year, the month, and the day are records 0 to 2 (fields 2, 3, 4; the others 0, one date, as
+    ///   am, the hour, the minute, and the second are smaller than every field of MMM d, y): MMM d, y – | MMM d, y, MMM d – |
+    ///   MMM d, y, and MMM d – | d, y.
+    /// - en's yMMMMd takes yMMMd's patterns with MMM made MMMM: MMMM d, y – | MMMM d, y, MMMM d – | MMMM d, y, MMMM d – | d, y.
+    /// - en's d takes d's item for the day, Md's for the month (d with M in front), and yMd's for the year (Md with y in front):
+    ///   M/d/y – | M/d/y, M/d – | M/d, d – | d.
+    /// - pt's MEd takes MEEd, which comes before MMEd in byte order, for the day (M/d EE – | M/d EE, not widened, as a width is never
+    ///   made shorter), and the fallback with its own pattern for the month and the year, which MEEd has no pattern for (fields 1, 1,
+    ///   2, 0, 0, 0, 0).
+    /// - ja's 24-hour entries of j, jm, and jms are the byte 255, as its hour is H; en's 24-hour jm is its Hm entry.
+    /// </remarks>
+    [Fact]
+    public void Tool_IntervalTables_HoldTheNearestItemsSplitInTwo()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (string fallback, List<IntervalEntry?> en) = IntervalTable(output, "CldrEn");
+            Assert.Equal("{0}" + Dash + "{1}", fallback);
+            IntervalEntry yMMMd = en[YMMMdEntry]!;
+            Assert.Equal([2, 3, 4, 0, 0, 0, 0], yMMMd.Fields);
+            Assert.Equal([(0, "MMM d, y" + Dash, "MMM d, y"), (0, "MMM d" + Dash, "MMM d, y"), (0, "MMM d" + Dash, "d, y")], yMMMd.Records);
+            IntervalEntry yMMMMd = en[YMMMMdEntry]!;
+            Assert.Equal([2, 3, 4, 0, 0, 0, 0], yMMMMd.Fields);
+            Assert.Equal([(0, "MMMM d, y" + Dash, "MMMM d, y"), (0, "MMMM d" + Dash, "MMMM d, y"), (0, "MMMM d" + Dash, "d, y")], yMMMMd.Records);
+            IntervalEntry day = en[DEntry]!;
+            Assert.Equal([2, 3, 4, 0, 0, 0, 0], day.Fields);
+            Assert.Equal([(0, "M/d/y" + Dash, "M/d/y"), (0, "M/d" + Dash, "M/d"), (0, "d" + Dash, "d")], day.Records);
+            (_, List<IntervalEntry?> pt) = IntervalTable(output, "CldrPt");
+            Assert.Equal([1, 1, 2, 0, 0, 0, 0], pt[MEdEntry]!.Fields);
+            Assert.Equal([(0, "M/d EE" + Dash, "M/d EE")], pt[MEdEntry]!.Records);
+            (_, List<IntervalEntry?> ja) = IntervalTable(output, "CldrJa");
+            Assert.All(ja.Skip(37), entry => Assert.Null(entry));
+            Assert.Equal(en[HmEntry]!.Fields, en[Jm24Entry]!.Fields);
+            Assert.Equal(en[HmEntry]!.Records, en[Jm24Entry]!.Records);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A skeleton with no near interval item writes both dates with its pattern and the fallback, for each field not smaller than all
+    /// of its pattern's; a time skeleton writes dates of other days with yMd and its time, joined by the short pattern that joins a
+    /// date and a time (design §4.11, "Interval formats"; ICU's initializePattern and isFieldUnitIgnored).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: no interval item has L, E, Q, or s; en has no dateTimeFormats-atTime, and the short joining
+    ///   pattern of its dateTimeFormats is {1} {0}; its yMd is M/d/y, its hm
+    ///   h:mm a, its Hm HH:mm, and its Hms HH:mm:ss; its hour is h; E's pattern is ccc.
+    ///
+    /// Steps:
+    /// - Run the tool, and read en's interval table.
+    ///
+    /// Expected:
+    /// - LLL and QQQ: the fallback with their own pattern for the year and the month, and one date for the day and below (1, 1, 0, 0,
+    ///   0, 0, 0); E also for the day (1, 1, 1, 0, 0, 0, 0); no record.
+    /// - jm: the year, the month, and the day take the record M/d/y h:mm a, a pattern for both dates; am or pm hm's a item
+    ///   (h:mm a – | h:mm a); the hour and the minute hm's h and m items, one record (h:mm – | h:mm a); the second one date
+    ///   (2, 2, 2, 3, 4, 4, 0).
+    /// - Hm: M/d/y HH:mm for the day and above, and HH:mm – | HH:mm for am or pm, which Hm has no item for, the hour, and the minute;
+    ///   the second one date (2, 2, 2, 3, 3, 3, 0).
+    /// - Hms: no item has s, so M/d/y HH:mm:ss for the day and above, and the fallback with HH:mm:ss for the rest, the second included
+    ///   (2, 2, 2, 1, 1, 1, 1).
+    /// </remarks>
+    [Fact]
+    public void Tool_IntervalTables_FallBackWithoutANearItem()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (_, List<IntervalEntry?> en) = IntervalTable(output, "CldrEn");
+            foreach (int entry in new[] { LllEntry, QqqEntry })
+            {
+                Assert.Equal([1, 1, 0, 0, 0, 0, 0], en[entry]!.Fields);
+                Assert.Empty(en[entry]!.Records);
+            }
+
+            Assert.Equal([1, 1, 1, 0, 0, 0, 0], en[EEntry]!.Fields);
+            Assert.Empty(en[EEntry]!.Records);
+            Assert.Equal([2, 2, 2, 3, 4, 4, 0], en[JmEntry]!.Fields);
+            Assert.Equal([(2, "M/d/y h:mm a", string.Empty), (0, "h:mm a" + Dash, "h:mm a"), (0, "h:mm" + Dash, "h:mm a")], en[JmEntry]!.Records);
+            Assert.Equal([2, 2, 2, 3, 3, 3, 0], en[HmEntry]!.Fields);
+            Assert.Equal([(2, "M/d/y HH:mm", string.Empty), (0, "HH:mm" + Dash, "HH:mm")], en[HmEntry]!.Records);
+            Assert.Equal([2, 2, 2, 1, 1, 1, 1], en[HmsEntry]!.Fields);
+            Assert.Equal([(2, "M/d/y HH:mm:ss", string.Empty)], en[HmsEntry]!.Records);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The order of an interval pattern's dates is the fallback's (the later date first when it has {1} before {0}), unless the
+    /// pattern starts with latestFirst: or earliestFirst:, which the table does not keep (design §4.11, "Split in two").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: de's fallback is {1} – {0} and its d item earliestFirst:d – d; ko's fallback is {0} – {1} and
+    ///   its d item latestFirst:d – d.
+    ///
+    /// Steps:
+    /// - Run the tool, and read the d entries of de and ko.
+    ///
+    /// Expected:
+    /// - de: the fallback {1} – {0}; the year and the month (from yMd and Md) are split with the later date first (kind 1), the day
+    ///   with the earlier first (kind 0): d – | d.
+    /// - ko: the year and the month earlier first (kind 0), the day later first (kind 1): d – | d.
+    /// </remarks>
+    [Fact]
+    public void Tool_IntervalTables_TakeTheOrderOfTheFallbackAndThePrefixes()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (string deFallback, List<IntervalEntry?> de) = IntervalTable(output, "CldrDe");
+            Assert.Equal("{1}" + Dash + "{0}", deFallback);
+            Assert.Equal([(1, "M/d/y" + Dash, "M/d/y"), (1, "M/d" + Dash, "M/d"), (0, "d" + Dash, "d")], de[DEntry]!.Records);
+            (_, List<IntervalEntry?> ko) = IntervalTable(output, "CldrKo");
+            Assert.Equal([(0, "M/d/y" + Dash, "M/d/y"), (0, "M/d" + Dash, "M/d"), (1, "d" + Dash, "d")], ko[DEntry]!.Records);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The patterns that join a date and a time are the standard ones of dateTimeFormats-atTime when the locale has them, else those
+    /// of dateTimeFormats, as ICU's DateTimePatternGenerator::loadDateTimeFormats reads them, both in the pattern table and in the
+    /// interval table's join of yMd and a time (design §4.11, "The pattern that joins a date and a time"; PR #966's review).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test: pt has PtAtTime ({1} 'às' {0} twice, then {1}, {0} twice) besides the dateTimeFormats of every
+    ///   locale ({1}, {0} three times, then {1} {0}); en has no atTime. Both have the hour h, yMd M/d/y, hm h:mm a, and Hm HH:mm.
+    ///
+    /// Steps:
+    /// - Run the tool, and read the joining patterns of pt's and en's pattern tables, and the jm and Hm entries of their interval
+    ///   tables.
+    ///
+    /// Expected:
+    /// - pt: {1} 'às' {0}, {1} 'às' {0}, {1}, {0}, {1}, {0}; jm's dates of other days are M/d/y, h:mm a and Hm's M/d/y, HH:mm.
+    /// - en: {1}, {0}, {1}, {0}, {1}, {0}, {1} {0}; jm's M/d/y h:mm a and Hm's M/d/y HH:mm.
+    /// </remarks>
+    [Fact]
+    public void Tool_JoiningPatterns_TakeAtTimeOverDateTimeFormats()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            string zip = WriteZip(directory, withBo: true);
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (_, List<string> pt) = PatternTable(output, "CldrPt");
+            Assert.Equal(["{1} 'às' {0}", "{1} 'às' {0}", "{1}, {0}", "{1}, {0}"], pt.Skip(48).Take(4));
+            (_, List<string> en) = PatternTable(output, "CldrEn");
+            Assert.Equal(["{1}, {0}", "{1}, {0}", "{1}, {0}", "{1} {0}"], en.Skip(48).Take(4));
+            (_, List<IntervalEntry?> ptIntervals) = IntervalTable(output, "CldrPt");
+            Assert.Equal((2, "M/d/y, h:mm a", string.Empty), ptIntervals[JmEntry]!.Records[0]);
+            Assert.Equal((2, "M/d/y, HH:mm", string.Empty), ptIntervals[HmEntry]!.Records[0]);
+            (_, List<IntervalEntry?> enIntervals) = IntervalTable(output, "CldrEn");
+            Assert.Equal((2, "M/d/y h:mm a", string.Empty), enIntervals[JmEntry]!.Records[0]);
+            Assert.Equal((2, "M/d/y HH:mm", string.Empty), enIntervals[HmEntry]!.Records[0]);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// An interval pattern's flexible day period (B) outside quotes is written as the requested a, as the date formats write it, and
+    /// a quoted B is text (design §4.11, "The letter of the day period"; Issue #906).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with zh's hm item for am or pm made Bh:mm – Bh:mm 'B', and a lock with its SHA-256. zh's hour is h.
+    ///
+    /// Steps:
+    /// - Run the tool, and read the record that zh's jm entry gives am or pm.
+    ///
+    /// Expected:
+    /// - A split earlier first: ah:mm – | ah:mm 'B'.
+    /// </remarks>
+    [Fact]
+    public void Tool_IntervalDayPeriod_TakesTheRequestedLetter()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            const string Gregorian = "cldr-dates-full/main/zh/ca-gregorian.json";
+            string from = "\"a\": \"h:mm a" + Dash + "h:mm a\"";
+            string to = "\"a\": \"Bh:mm" + Dash + "Bh:mm 'B'\"";
+            string zip = WriteZip(directory, withBo: true, edit: (Gregorian, from, to));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (_, List<IntervalEntry?> zh) = IntervalTable(output, "CldrZh");
+            IntervalEntry jm = zh[JmEntry]!;
+            Assert.Equal((0, "ah:mm" + Dash, "ah:mm 'B'"), jm.Records[jm.Fields[3] - 2]);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// An interval pattern whose fields do not repeat is all the first part, with an empty second part, as ICU's
+    /// splitPatternInto2Part makes it, so that one date is written (design §4.11, "Split in two").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - The zip of the first test with de's y item made y alone, and a lock with its SHA-256. de's fallback is {1} – {0}, so the later
+    ///   date comes first.
+    ///
+    /// Steps:
+    /// - Run the tool, and read de's y entry.
+    ///
+    /// Expected:
+    /// - The year takes the record y | (empty) with the later date first (kind 1); the other fields write one date (2, 0, 0, 0, 0,
+    ///   0, 0).
+    /// </remarks>
+    [Fact]
+    public void Tool_IntervalPatternWithoutARepeatedField_IsAllTheFirstPart()
+    {
+        string directory = Directory.CreateTempSubdirectory("xylemui-cldr-").FullName;
+        try
+        {
+            const string Gregorian = "cldr-dates-full/main/de/ca-gregorian.json";
+            string from = "\"y\": { \"y\": \"y" + Dash + "y\" }";
+            string zip = WriteZip(directory, withBo: true, edit: (Gregorian, from, "\"y\": { \"y\": \"y\" }"));
+            string lockFile = WriteLock(directory, Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(zip))));
+            string output = Path.Combine(directory, "out");
+
+            (int exit, string text) = RunTool("--zip", zip, "--lock", lockFile, "--out", output);
+
+            Assert.True(exit == 0, text);
+            (_, List<IntervalEntry?> de) = IntervalTable(output, "CldrDe");
+            Assert.Equal([2, 0, 0, 0, 0, 0, 0], de[YEntry]!.Fields);
+            Assert.Equal([(1, "y", string.Empty)], de[YEntry]!.Records);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// The generator puts the letters of a joining pattern in quotes, so that the joined pattern writes them as text and not as fields
     /// (UTS #35 part 4: the joining patterns are simple formatters; sl's Time-Day-Of-Week is {1} ob {0}); letters already in quotes
     /// are kept.
@@ -659,13 +998,19 @@ public sealed class CldrTableGenTests
 
     /// <summary>
     /// Date data the formats cannot write stops the generator: an hourFormat that is not a positive and a negative pattern of H or
-    /// HH and mm, a gmtFormat or a joining pattern without each placeholder once, and a joining pattern with letters next to a quote.
+    /// HH and mm, a gmtFormat, a joining pattern, or an intervalFormatFallback without each placeholder once, a joining pattern with
+    /// letters next to a quote, an interval skeleton with a character that is not a letter, an interval pattern that is a prefix
+    /// alone (the only pattern whose first part would be empty; design §4.11, "Split in two"), and a pattern of the hour with K,
+    /// whose interval patterns ICU's adjustFieldWidth would rewrite (PR #966's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - The zip of the first test with the row's text of one of de's entries replaced, and a lock with its SHA-256: an hourFormat
     ///   of one pattern, an hourFormat of HHH, a gmtFormat without {0}, a short joining pattern with {1} twice, a
-    ///   Time-Day-Of-Week whose letter b follows a quote, and one whose letter b comes before a quote.
+    ///   Time-Day-Of-Week whose letter b follows a quote, and one whose letter b comes before a quote; an intervalFormatFallback
+    ///   with {1} twice; an interval item -y, first in byte order; the d item earliestFirst: alone; the h format K a, ja's hour
+    ///   letter (aK時) in a locale whose hour is h. The pattern table's check of j's pattern stops the tool on K before the interval
+    ///   table reads the pattern of the hour.
     ///
     /// Steps:
     /// - Run the tool into an empty directory.
@@ -1176,7 +1521,8 @@ public sealed class CldrTableGenTests
     // wide January (wM1alone); the eras BC, AD, Before Christ, Anno Domini, B, A; the standard date patterns, whose full one is
     // EEEE d MMMM y for en and ko and E, MMMM d, y for the others, and the standard time patterns, whose medium and short ones are
     // HH:mm:ss and H:mm:ss for zh; the joining patterns {1}, {0} but the
-    // short one {1} {0}; the Time-Day-Of-Week append item {0} ({1}); and the given formats.
+    // short one {1} {0}, and for pt also the atTime ones of PtAtTime; the Time-Day-Of-Week append item {0} ({1}); the given
+    // formats; and the interval formats of IntervalJson.
     private static string GregorianJson(string tag, IEnumerable<(string Key, string Pattern)> formats)
     {
         string[] months = [.. Enumerable.Range(1, 12).Select(month => month.ToString(CultureInfo.InvariantCulture))];
@@ -1206,11 +1552,51 @@ public sealed class CldrTableGenTests
             + "\", \"short\": \""
             + (tag is "zh" ? "H:mm:ss" : "h:mm a")
             + "\" }, "
+            + (tag is "pt" ? PtAtTime : string.Empty)
             + "\"dateTimeFormats\": { \"full\": \"{1}, {0}\", \"long\": \"{1}, {0}\", "
             + "\"medium\": \"{1}, {0}\", \"short\": \"{1} {0}\", \"appendItems\": { \"Time-Day-Of-Week\": \"{0} ({1})\" }, "
             + "\"availableFormats\": "
             + available
+            + ", \"intervalFormats\": "
+            + IntervalJson(tag)
             + " } } } } } } }";
+    }
+
+    // The interval formats of a locale: the fallback {0} – {1} ({1} – {0} for de), and the items d, Hm, hm, Md, MMMd, y, yMd, yMMM,
+    // and yMMMd in en's patterns with an en dash between spaces, but de's d (earliestFirst:d – d) and ko's (latestFirst:d – d); pt
+    // also has MMEd (MM-dd E – MM-dd E) and MEEd (M/d EE – M/d EE), which are as near MEd as each other.
+    private static string IntervalJson(string tag)
+    {
+        string fallback = tag == "de" ? "{1}" + Dash + "{0}" : "{0}" + Dash + "{1}";
+        string prefix = tag switch
+        {
+            "de" => "earliestFirst:",
+            "ko" => "latestFirst:",
+            _ => string.Empty,
+        };
+        var items = new List<(string Key, string Value)>
+        {
+            ("intervalFormatFallback", JsonText(fallback)),
+            ("d", Item(("d", prefix + "d" + Dash + "d"))),
+            ("Hm", Item(("H", "HH:mm" + Dash + "HH:mm"), ("m", "HH:mm" + Dash + "HH:mm"))),
+            ("hm", Item(("a", "h:mm a" + Dash + "h:mm a"), ("h", "h:mm" + Dash + "h:mm a"), ("m", "h:mm" + Dash + "h:mm a"))),
+            ("Md", Item(("d", "M/d" + Dash + "M/d"), ("M", "M/d" + Dash + "M/d"))),
+            ("MMMd", Item(("d", "MMM d" + Dash + "d"), ("M", "MMM d" + Dash + "MMM d"))),
+            ("y", Item(("y", "y" + Dash + "y"))),
+            ("yMd", Item(("d", "M/d/y" + Dash + "M/d/y"), ("M", "M/d/y" + Dash + "M/d/y"), ("y", "M/d/y" + Dash + "M/d/y"))),
+            ("yMMM", Item(("M", "MMM" + Dash + "MMM y"), ("y", "MMM y" + Dash + "MMM y"))),
+            ("yMMMd", Item(("d", "MMM d" + Dash + "d, y"), ("M", "MMM d" + Dash + "MMM d, y"), ("y", "MMM d, y" + Dash + "MMM d, y"))),
+        };
+        if (tag == "pt")
+        {
+            items.Add(("MMEd", Item(("d", "MM-dd E" + Dash + "MM-dd E"))));
+            items.Add(("MEEd", Item(("d", "M/d EE" + Dash + "M/d EE"))));
+        }
+
+        return JsonObject(items);
+
+        static string Item(params (string Letter, string Pattern)[] patterns) =>
+            JsonObject(patterns.Select(pattern => (pattern.Letter, JsonText(pattern.Pattern))));
     }
 
     // The format and the stand-alone names of one kind; the stand-alone wide name of the first key is the given one when there is one.
@@ -1301,6 +1687,43 @@ public sealed class CldrTableGenTests
         return (zero, strings);
     }
 
+    // A locale's interval table: intervalFormatFallback, then its 40 entries, which end the table; a 24-hour entry that is the
+    // skeleton's in the locale's hour (the byte 255) is null.
+    private static (string Fallback, List<IntervalEntry?> Entries) IntervalTable(string output, string className)
+    {
+        var reader = new CldrTableReader(TableBytesOf(output, className, "DateIntervalTable"));
+        string fallback = reader.ReadString();
+        var entries = new List<IntervalEntry?>();
+        for (int i = 0; i < 40; i++)
+        {
+            int count = reader.ReadByte();
+            if (count == 255)
+            {
+                entries.Add(null);
+                continue;
+            }
+
+            int[] fields = new int[7];
+            for (int field = 0; field < fields.Length; field++)
+            {
+                fields[field] = reader.ReadByte();
+            }
+
+            var records = new List<(int Kind, string First, string Second)>();
+            for (int record = 0; record < count; record++)
+            {
+                int kind = reader.ReadByte();
+                string first = reader.ReadString();
+                records.Add((kind, first, kind == 2 ? string.Empty : reader.ReadString()));
+            }
+
+            entries.Add(new IntervalEntry(fields, records));
+        }
+
+        Assert.True(reader.End, className);
+        return (fallback, entries);
+    }
+
     private static string[] Files(string root) =>
         [
             .. Directory
@@ -1344,6 +1767,11 @@ public sealed class CldrTableGenTests
 
         throw new InvalidOperationException("The tests run outside the repository.");
     }
+
+    // One entry of an interval table: a byte for each field (the year, the month, the day, am or pm, the hour, the minute, the
+    // second: 0 one date, 1 the fallback with the skeleton's pattern, 2 + k the record k), and the records: the kind (0 split, 1 split
+    // with the later date first, 2 a pattern for both dates and the fallback) and the strings, the second empty for kind 2.
+    private sealed record IntervalEntry(int[] Fields, List<(int Kind, string First, string Second)> Records);
 
     // A zip being written, and the edit of the text of one of its entries.
     private sealed class EditedZip(ZipArchive archive, (string Entry, string From, string To)? edit) : IDisposable

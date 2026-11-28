@@ -1,15 +1,19 @@
+using System.Globalization;
 using System.Text;
 
 namespace XylemUI.Tests;
 
 // The date and time formats of LC2 (design §4.11, "Dates and times", "Added to the scope", and "Allocation and threads"): Flutter's 41
-// skeletons in each locale, the 12-hour and the 24-hour forms of j, a date and a time joined by dateTimeFormats, the offset from GMT
+// skeletons in each locale, the 12-hour and the 24-hour forms of j, a date and a time joined by the patterns that join them
+// (dateTimeFormats-atTime, or dateTimeFormats for a locale without it), the offset from GMT
 // of the time zone skeletons, the value types a format takes, the digits of the locale, and no allocation. The expected values were
 // read from the json of cldr-49.0.0-json-full.zip (ca-gregorian.json, timeZoneNames.json, numbers.json, timeData.json), not from
 // the generated code: the pattern of a skeleton that availableFormats has is its pattern there, and the others were worked out from
 // the json with the rules of tools/CldrTableGen/SkeletonMatcher.cs (EEEE from E, LLL, LLLL, and MMMM from MMM, MMMMEEEEd from
 // MMMMEd, yMMMMEEEEd from the full date pattern when no available format has its base, QQQ, QQQQ, m, and s alone, jmz and jz from
-// hmv and hv). In the expected text, _ is U+00A0, ^ is U+202F, | is U+200E, ! is U+200F, and @ is U+061C.
+// hmv and hv). The ranges' expected values were worked out from the json's intervalFormats with the rules of
+// tools/CldrTableGen/IntervalMatcher.cs, a port of ICU's DateIntervalFormat. In the expected text, _ is U+00A0, ^ is U+202F, | is
+// U+200E, ! is U+200F, @ is U+061C, and ~ is U+2009.
 public sealed class DateFormatterTests
 {
     // The places in a date pattern table (PatternAt): jmz among the 41 patterns, and hourFormat after gmtFormat at the end.
@@ -433,15 +437,18 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
-    /// A date skeleton and a time skeleton are joined by the locale's dateTimeFormats: full for a wide month and a weekday, long for a
-    /// wide month, medium for an abbreviated month, and short otherwise; a weekday alone by the Time-Day-Of-Week append item
-    /// (design §4.11, "The pattern that joins a date and a time").
+    /// A date skeleton and a time skeleton are joined by the locale's patterns that join a date and a time, those of
+    /// dateTimeFormats-atTime when the locale has them, as ICU's DateTimePatternGenerator reads them: full for a wide month and a
+    /// weekday, long for a wide month, medium for an abbreviated month, and short otherwise; a weekday alone by the Time-Day-Of-Week
+    /// append item (design §4.11, "The pattern that joins a date and a time"; PR #966's review).
     /// </summary>
     /// <remarks>
     /// Preconditions:
     /// - CLDR 49 gives no locale four different joining patterns. nn's are {1} {0} (full), {1} 'kl'. {0} (long), and {1}, {0}
-    ///   (medium and short); fr's are {1}, {0} but the short {1} {0}; ja's Time-Day-Of-Week is {0} ({1}), ko's ({1}) {0}, en's
-    ///   {1}, {0}, and sl's {1} ob {0}, whose letters the tool quotes. nn's, fr's, and sl's hour is H.
+    ///   (medium and short); fr's are {1}, {0} but the short {1} {0}; en's atTime ones are {1} 'at' {0} (full and long) and {1}, {0}
+    ///   (medium and short); pt's short atTime one is {1}, {0}, where its dateTimeFormats has {1} {0}. ja's Time-Day-Of-Week is
+    ///   {0} ({1}), ko's ({1}) {0}, en's {1}, {0}, and sl's {1} ob {0}, whose letters the tool quotes. nn's, fr's, pt's, and sl's
+    ///   hour is H.
     /// - The date skeletons: a wide month with a weekday (MMMMEEEEd), a wide month (yMMMMd, LLLL), an abbreviated month (yMMMd,
     ///   LLL), no month name (yMd, QQQ), and a weekday alone (E, EEEE).
     ///
@@ -456,7 +463,7 @@ public sealed class DateFormatterTests
     /// <param name="timeSkeleton">The time skeleton.</param>
     /// <param name="expected">The text, with the marks of the class comment.</param>
     [Theory]
-    [InlineData("nn", "MMMMEEEEd", "jm", "tysdag 3 februar 13:05")]
+    [InlineData("nn", "MMMMEEEEd", "jm", "tysdag 3 februar kl. 13:05")]
     [InlineData("nn", "yMMMMd", "jm", "3. februar 2026 kl. 13:05")]
     [InlineData("nn", "yMMMd", "jm", "3. feb. 2026, 13:05")]
     [InlineData("nn", "LLLL", "jm", "februar kl. 13:05")]
@@ -469,6 +476,10 @@ public sealed class DateFormatterTests
     [InlineData("ko", "E", "jm", "(화) 오후 1:05")]
     [InlineData("en", "E", "jm", "Tue, 1:05^PM")]
     [InlineData("en", "yMd", "jmz", "2/3/2026, 1:05^PM GMT+9")]
+    [InlineData("en", "MMMMEEEEd", "jm", "Tuesday, February 3 at 1:05^PM")]
+    [InlineData("en", "yMMMMd", "jm", "February 3, 2026 at 1:05^PM")]
+    [InlineData("en", "yMMMd", "jm", "Feb 3, 2026, 1:05^PM")]
+    [InlineData("pt", "yMd", "jm", "03/02/2026, 13:05")]
     public void FromSkeletons_DateSkeletons_TakeTheirJoiningPattern(string tag, string dateSkeleton, string timeSkeleton, string expected) =>
         Assert.Equal(Marked(expected), Write(DateFormatter.FromSkeletons(ByTag[tag], dateSkeleton, timeSkeleton, false), Moment));
 
@@ -1004,6 +1015,278 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
+    /// A range writes CLDR's interval pattern of the first field the two values differ in, split between them; a field smaller than
+    /// every field of the format writes the start alone; a skeleton with no near interval item, and a time skeleton whose values are
+    /// on other days, write both values whole joined by intervalFormatFallback (design §4.11, "Interval formats").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en (fallback {0}~–~{1}, its hour h), ja (fallback {0}～{1}, its hour H), and pt (its hour H, its short atTime joining
+    ///   pattern {1}, {0}); CLDR 49's intervalFormats.
+    ///
+    /// Steps:
+    /// - Write the row's range of DateTime values (written yyyy-MM-ddTHH:mm:ss, the time 0 when left out) with the row's skeleton,
+    ///   with the 24-hour form when the row asks for it. The rows cover a day, a month, and a year that differ (yMMMd); a skeleton
+    ///   with no item of its own (yMMMMd takes yMMMd's, widened); a field the item lacks (d's month from Md); an hour, a minute, and
+    ///   am or pm (jm; 24-hour jm takes Hm's hour pattern for am or pm), am and pm at 11:59 and 12:00, and two times from 12:00, both
+    ///   pm; a time skeleton with another day (jm, the 24-hour j and jms, whose entries are the two around 24-hour jm's, and pt's
+    ///   Hm, joined by the atTime pattern as ICU 78.3 writes it); skeletons with no near item (LLL, E, QQQ, and Hms for a second);
+    ///   and fields smaller than the format's (Hm and a second, yMd and an hour, y and a month).
+    ///
+    /// Expected:
+    /// - The text of the row.
+    /// </remarks>
+    /// <param name="tag">The locale.</param>
+    /// <param name="skeleton">The skeleton.</param>
+    /// <param name="use24HourFormat">Whether the 24-hour form is asked for.</param>
+    /// <param name="start">The start.</param>
+    /// <param name="end">The end.</param>
+    /// <param name="expected">The text, with the marks of the class comment.</param>
+    [Theory]
+    [InlineData("en", "yMMMd", false, "2026-01-03", "2026-01-09", "Jan 3~–~9, 2026")]
+    [InlineData("en", "yMMMd", false, "2026-01-03", "2026-02-09", "Jan 3~–~Feb 9, 2026")]
+    [InlineData("en", "yMMMd", false, "2025-12-29", "2026-01-04", "Dec 29, 2025~–~Jan 4, 2026")]
+    [InlineData("en", "yMMMMd", false, "2026-01-03", "2026-01-09", "January 3~–~9, 2026")]
+    [InlineData("en", "d", false, "2026-01-03", "2026-02-09", "1/3~–~2/9")]
+    [InlineData("en", "jm", false, "2026-01-03T09:05:00", "2026-01-03T11:30:00", "9:05~–~11:30^AM")]
+    [InlineData("en", "jm", false, "2026-01-03T09:05:00", "2026-01-03T09:30:00", "9:05~–~9:30^AM")]
+    [InlineData("en", "jm", false, "2026-01-03T09:05:00", "2026-01-03T13:30:00", "9:05^AM~–~1:30^PM")]
+    [InlineData("en", "jm", true, "2026-01-03T09:05:00", "2026-01-03T21:30:00", "09:05~–~21:30")]
+    [InlineData("en", "jm", false, "2026-01-03T11:59:00", "2026-01-03T12:00:00", "11:59^AM~–~12:00^PM")]
+    [InlineData("en", "jm", false, "2026-01-03T12:00:00", "2026-01-03T12:30:00", "12:00~–~12:30^PM")]
+    [InlineData("en", "jm", false, "2026-01-03T09:05:00", "2026-01-04T10:00:00", "1/3/2026, 9:05^AM~–~1/4/2026, 10:00^AM")]
+    [InlineData("en", "j", true, "2026-01-03T09:05:00", "2026-01-04T10:00:00", "1/3/2026, 09~–~1/4/2026, 10")]
+    [InlineData("en", "jms", true, "2026-01-03T09:05:00", "2026-01-04T10:00:00", "1/3/2026, 09:05:00~–~1/4/2026, 10:00:00")]
+    [InlineData("pt", "Hm", false, "2026-03-04T09:05:00", "2026-03-05T11:30:00", "04/03/2026, 09:05~–~05/03/2026, 11:30")]
+    [InlineData("en", "LLL", false, "2026-01-03", "2026-03-09", "Jan~–~Mar")]
+    [InlineData("en", "E", false, "2026-01-03", "2026-01-09", "Sat~–~Fri")]
+    [InlineData("en", "QQQ", false, "2026-01-03", "2026-04-09", "Q1~–~Q2")]
+    [InlineData("en", "Hms", false, "2026-01-03T13:05:09", "2026-01-03T13:05:30", "13:05:09~–~13:05:30")]
+    [InlineData("en", "Hm", false, "2026-01-03T13:05:09", "2026-01-03T13:05:30", "13:05")]
+    [InlineData("en", "yMd", false, "2026-01-03T09:00:00", "2026-01-03T17:00:00", "1/3/2026")]
+    [InlineData("en", "y", false, "2026-01-03", "2026-03-09", "2026")]
+    [InlineData("ja", "yMMMd", false, "2026-01-03", "2026-01-09", "2026年1月3日～9日")]
+    [InlineData("ja", "yMMMd", false, "2026-01-03", "2026-02-09", "2026年1月3日～2月9日")]
+    [InlineData("ja", "yMMMd", false, "2025-12-29", "2026-01-04", "2025年12月29日～2026年1月4日")]
+    [InlineData("ja", "yMMMMd", false, "2026-01-03", "2026-01-09", "2026年1月3日～9日")]
+    [InlineData("ja", "jm", false, "2026-01-03T09:05:00", "2026-01-03T11:30:00", "9時05分～11時30分")]
+    [InlineData("ja", "jm", false, "2026-01-03T09:05:00", "2026-01-03T09:30:00", "9時05分～9時30分")]
+    [InlineData("ja", "jm", false, "2026-01-03T09:05:00", "2026-01-04T10:00:00", "2026/1/3 9:05～2026/1/4 10:00")]
+    [InlineData("ja", "LLL", false, "2026-01-03", "2026-03-09", "1月～3月")]
+    [InlineData("ja", "yMd", false, "2026-01-03T09:00:00", "2026-01-03T17:00:00", "2026/1/3")]
+    public void TryFormatRange_IntervalFormats_WriteTheFirstFieldThatDiffers(
+        string tag,
+        string skeleton,
+        bool use24HourFormat,
+        string start,
+        string end,
+        string expected
+    )
+    {
+        DateFormatter format = DateFormatter.FromSkeleton(ByTag[tag], skeleton, use24HourFormat);
+        char[] buffer = new char[128];
+
+        Assert.True(format.TryFormatRange(ParseClock(start), ParseClock(end), buffer, out int written));
+
+        Assert.Equal(Marked(expected), new string(buffer, 0, written));
+    }
+
+    /// <summary>
+    /// A range of two DateOnly values writes what the same days at midnight write; OfRange writes it in an interpolation of a
+    /// NodeTextWriter, and its default value writes nothing; a range of one day writes the day alone.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMMMd; a writer over a buffer.
+    ///
+    /// Steps:
+    /// - Write 2026-01-03 to 2026-01-09 as DateOnly values with TryFormatRange; write "Week of {range}{default}" with OfRange; write
+    ///   2026-01-03 to 2026-01-03.
+    ///
+    /// Expected:
+    /// - Jan 3~–~9, 2026; Week of Jan 3~–~9, 2026; Jan 3, 2026.
+    /// </remarks>
+    [Fact]
+    public void OfRange_DateOnly_WritesTheRange()
+    {
+        DateFormatter format = DateFormatter.FromSkeleton(CldrLocales.En, "yMMMd", false);
+        var start = new DateOnly(2026, 1, 3);
+        var end = new DateOnly(2026, 1, 9);
+        char[] buffer = new char[64];
+        var writer = new NodeTextWriter(new char[64], new TextRangeWriter());
+
+        Assert.True(format.TryFormatRange(start, end, buffer, out int written));
+        writer.Write($"Week of {format.OfRange(start, end)}{default(FormattedDateRange)}");
+        Assert.True(format.TryFormatRange(start, start, buffer.AsSpan(32), out int sameDay));
+
+        Assert.Equal(Marked("Jan 3~–~9, 2026"), new string(buffer, 0, written));
+        Assert.Equal(Marked("Week of Jan 3~–~9, 2026"), new string(writer.Buffer, 0, writer.Length));
+        Assert.Equal("Jan 3, 2026", new string(buffer, 32, sameDay));
+    }
+
+    /// <summary>
+    /// A 24-hour entry that the table points to the skeleton's entry in the locale's hour (the byte 255) writes what that entry
+    /// writes: a locale whose hour is H writes the same range with the 24-hour form and without it.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - ja, whose hour is H, so that its interval table has the byte 255 for the 24-hour entries of j, jm, and jms, which follow
+    ///   one another (jms's is read after skipping two such entries).
+    ///
+    /// Steps:
+    /// - Write 2026-01-03 09:05 to 11:30, and 2026-01-03 09:05 to 2026-01-04 10:00, with j, jm, and jms, without and with the
+    ///   24-hour form.
+    ///
+    /// Expected:
+    /// - Each skeleton writes the same text both ways; jm's first range is 9時05分～11時30分.
+    /// </remarks>
+    [Fact]
+    public void TryFormatRange_TwentyFourHourEntryOfTheLocalesHour_WritesTheOwnEntry()
+    {
+        var start = new DateTime(2026, 1, 3, 9, 5, 0);
+        DateTime[] ends = [new(2026, 1, 3, 11, 30, 0), new(2026, 1, 4, 10, 0, 0)];
+        char[] buffer = new char[128];
+
+        foreach (string skeleton in new[] { "j", "jm", "jms" })
+        {
+            foreach (DateTime end in ends)
+            {
+                Assert.True(DateFormatter.FromSkeleton(CldrLocales.Ja, skeleton, false).TryFormatRange(start, end, buffer, out int written));
+                string own = new(buffer, 0, written);
+                Assert.True(DateFormatter.FromSkeleton(CldrLocales.Ja, skeleton, true).TryFormatRange(start, end, buffer, out written));
+                Assert.Equal(own, new string(buffer, 0, written));
+            }
+        }
+
+        Assert.True(DateFormatter.FromSkeleton(CldrLocales.Ja, "jm", true).TryFormatRange(start, ends[0], buffer, out int text));
+        Assert.Equal("9時05分～11時30分", new string(buffer, 0, text));
+    }
+
+    /// <summary>
+    /// A destination too short for a range writes nothing and returns <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMMMd (Jan 3~–~9, 2026: 15 characters).
+    ///
+    /// Steps:
+    /// - Write 2026-01-03 to 2026-01-09 into 14 and 15 characters.
+    ///
+    /// Expected:
+    /// - false and 0, then true and 15.
+    /// </remarks>
+    [Fact]
+    public void TryFormatRange_ShortDestination_IsFalse()
+    {
+        DateFormatter format = DateFormatter.FromSkeleton(CldrLocales.En, "yMMMd", false);
+        var start = new DateOnly(2026, 1, 3);
+        var end = new DateOnly(2026, 1, 9);
+
+        Assert.False(format.TryFormatRange(start, end, new char[14], out int none));
+        Assert.Equal(0, none);
+        Assert.True(format.TryFormatRange(start, end, new char[15], out int all));
+        Assert.Equal(15, all);
+    }
+
+    /// <summary>
+    /// The later date is written first where the table says so: by the fallback when it has {1} before {0}, and by a split record
+    /// of the kind that writes its first part with the later date, a record whose second part is empty included (design §4.11,
+    /// "Split in two"). CLDR 49 has neither, so the tables are made by the test.
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - Tables that are en's but for the interval table, which the test makes: each of its 40 entries is the same, with the row's
+    ///   fallback, the row's field bytes for the 7 fields, and the row's records. The format is en's yMMMd (MMM d, y).
+    ///
+    /// Steps:
+    /// - Write 2026-01-03 to 2026-01-09, and 2025-12-29 to 2026-01-04, with each table.
+    ///
+    /// Expected:
+    /// - The fallback &lt;{1} - {0}&gt; with the format's own pattern: &lt;Jan 9, 2026 - Jan 3, 2026&gt;.
+    /// - The fallback {1} - {0} with the record M/d/y for both dates: 1/9/2026 - 1/3/2026.
+    /// - The split MMM d -  | d, y with the later date first: Jan 9 - 3, 2026; with the earlier first: Jan 3 - 9, 2026.
+    /// - The split y | (empty) with the later date first writes 2026 for the second range, and with the earlier first 2025.
+    /// </remarks>
+    [Fact]
+    public void TryFormatRange_LaterDateFirst_WritesTheEndFirst()
+    {
+        var start = new DateTime(2026, 1, 3);
+        var end = new DateTime(2026, 1, 9);
+        var newYearStart = new DateTime(2025, 12, 29);
+        var newYearEnd = new DateTime(2026, 1, 4);
+        int[] own = [1, 1, 1, 1, 1, 1, 1];
+        int[] record = [2, 2, 2, 2, 2, 2, 2];
+
+        Assert.Equal("<Jan 9, 2026 - Jan 3, 2026>", Range(IntervalTableOf("<{1} - {0}>", own), start, end));
+        Assert.Equal("1/9/2026 - 1/3/2026", Range(IntervalTableOf("{1} - {0}", record, (2, "M/d/y", string.Empty)), start, end));
+        Assert.Equal("Jan 9 - 3, 2026", Range(IntervalTableOf("{0} - {1}", record, (1, "MMM d - ", "d, y")), start, end));
+        Assert.Equal("Jan 3 - 9, 2026", Range(IntervalTableOf("{0} - {1}", record, (0, "MMM d - ", "d, y")), start, end));
+        Assert.Equal("2026", Range(IntervalTableOf("{0} - {1}", record, (1, "y", string.Empty)), newYearStart, newYearEnd));
+        Assert.Equal("2025", Range(IntervalTableOf("{0} - {1}", record, (0, "y", string.Empty)), newYearStart, newYearEnd));
+
+        static string Range(byte[] intervals, DateTime from, DateTime to)
+        {
+            var data = new PatternLocaleData(CldrLocales.En.DatePatternTable.ToArray(), intervals);
+            char[] buffer = new char[64];
+            Assert.True(DateFormatter.FromSkeleton(data, "yMMMd", false).TryFormatRange(from, to, buffer, out int written));
+            return new string(buffer, 0, written);
+        }
+    }
+
+    /// <summary>
+    /// A range whose start is after its end, a value type the format does not take, and a time zone skeleton, which needs an offset,
+    /// throw <see cref="ArgumentException"/>; a date skeleton joined with a time skeleton throws
+    /// <see cref="InvalidOperationException"/>, as intervalFormats have no patterns for it (design §4.11, "The table").
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMMMd, jm, and jmz, and yMd joined with jm.
+    ///
+    /// Steps:
+    /// - Write and make ranges of 2026-01-09 to 2026-01-03 with yMMMd, as DateOnly and DateTime values; ranges of DateOnly values
+    ///   with jm; of DateTime values with jmz; of DateTime values with the joined format.
+    ///
+    /// Expected:
+    /// - ArgumentException naming start for each: the reversed ranges say the start is after the end, jm's DateOnly values that
+    ///   they have no time, and jmz's DateTime values that a range takes no offset; InvalidOperationException for the joined format;
+    ///   by TryFormatRange and by OfRange.
+    /// </remarks>
+    [Fact]
+    public void TryFormatRange_ValuesTheFormatDoesNotTake_Throw()
+    {
+        const string Reversed = "The range's start is after its end.";
+        const string NoTime = "A range of DateOnly values has no time, and the format writes a time field.";
+        const string NoOffset = "The format writes a time zone, and a range takes no offset.";
+        DateFormatter date = DateFormatter.FromSkeleton(CldrLocales.En, "yMMMd", false);
+        DateFormatter time = DateFormatter.FromSkeleton(CldrLocales.En, "jm", false);
+        DateFormatter zone = DateFormatter.FromSkeleton(CldrLocales.En, "jmz", false);
+        DateFormatter joined = DateFormatter.FromSkeletons(CldrLocales.En, "yMd", "jm", false);
+        var early = new DateOnly(2026, 1, 3);
+        var late = new DateOnly(2026, 1, 9);
+        DateTime earlyClock = early.ToDateTime(TimeOnly.MinValue);
+        DateTime lateClock = late.ToDateTime(TimeOnly.MinValue);
+        char[] buffer = new char[64];
+
+        Check(Reversed, () => date.TryFormatRange(late, early, buffer, out _));
+        Check(Reversed, () => date.TryFormatRange(lateClock, earlyClock, buffer, out _));
+        Check(Reversed, () => date.OfRange(late, early));
+        Check(Reversed, () => date.OfRange(lateClock, earlyClock));
+        Check(NoTime, () => time.TryFormatRange(early, late, buffer, out _));
+        Check(NoTime, () => time.OfRange(early, late));
+        Check(NoOffset, () => zone.TryFormatRange(earlyClock, lateClock, buffer, out _));
+        Check(NoOffset, () => zone.OfRange(earlyClock, lateClock));
+        Assert.Throws<InvalidOperationException>(() => joined.TryFormatRange(earlyClock, lateClock, buffer, out _));
+        Assert.Throws<InvalidOperationException>(() => joined.OfRange(earlyClock, lateClock));
+
+        static void Check(string message, Action call)
+        {
+            ArgumentException thrown = Assert.Throws<ArgumentException>(call);
+            Assert.Equal("start", thrown.ParamName);
+            Assert.StartsWith(message, thrown.Message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// Writing a date allocates nothing, and neither does writing Of(value) into a NodeTextWriter (design §4.11, "Allocation and
     /// threads"; §11.3's Zero-Alloc check).
     /// </summary>
@@ -1057,6 +1340,63 @@ public sealed class DateFormatterTests
     }
 
     /// <summary>
+    /// Writing a range allocates nothing once the format has written one, and neither does writing OfRange into a NodeTextWriter
+    /// (design §4.11, "Allocation and threads"; §11.3's Zero-Alloc check).
+    /// </summary>
+    /// <remarks>
+    /// Preconditions:
+    /// - en's yMMMd (split patterns), jm (split, and the fallback with yMd and the time for other days), and LLL (the fallback with
+    ///   its own pattern); one range written with each before the measured runs, which reads their interval patterns; a destination
+    ///   buffer and a writer over a buffer.
+    ///
+    /// Steps:
+    /// - 1,000 times, in the windows of <c>PerformanceAssert.DoesNotAllocate</c>: with the index shifted by the 100 runs of the
+    ///   unmeasured window so that it is 0 or more, write the range from 2026-01-03 09:05 to that many hours later with jm, and
+    ///   to that many days later with yMMMd and LLL (as DateOnly values), and write the three OfRange values into a new writer over
+    ///   the same buffer.
+    ///
+    /// Expected:
+    /// - No byte is allocated, and every run wrote.
+    /// </remarks>
+    [Fact]
+    public void Ranges_AllocateNothing()
+    {
+        DateFormatter days = DateFormatter.FromSkeleton(CldrLocales.En, "yMMMd", false);
+        DateFormatter times = DateFormatter.FromSkeleton(CldrLocales.En, "jm", false);
+        DateFormatter months = DateFormatter.FromSkeleton(CldrLocales.En, "LLL", false);
+        var start = new DateTime(2026, 1, 3, 9, 5, 0);
+        var startDay = DateOnly.FromDateTime(start);
+        char[] destination = new char[64];
+        char[] text = new char[128];
+        var ranges = new TextRangeWriter();
+        Assert.True(days.TryFormatRange(startDay, startDay, destination, out _));
+        Assert.True(times.TryFormatRange(start, start, destination, out _));
+        Assert.True(months.TryFormatRange(startDay, startDay, destination, out _));
+        int done = 0;
+
+        int runs = PerformanceAssert.DoesNotAllocate(
+            1_000,
+            i =>
+            {
+                int steps = i + 100;
+                DateTime end = start.AddHours(steps);
+                DateOnly endDay = startDay.AddDays(steps);
+                bool all = times.TryFormatRange(start, end, destination, out _);
+                all &= days.TryFormatRange(startDay, endDay, destination, out _);
+                all &= months.TryFormatRange(startDay, endDay, destination, out _);
+                var writer = new NodeTextWriter(text, ranges);
+                writer.Write($"{times.OfRange(start, end)} {days.OfRange(startDay, endDay)} {months.OfRange(startDay, endDay)}");
+                if (all && writer.Length > 0)
+                {
+                    done++;
+                }
+            }
+        );
+
+        Assert.Equal(runs, done);
+    }
+
+    /// <summary>
     /// The tool's counts of distinct date tables, and that a date's digits are the number table's (design §4.11, "Tests").
     /// </summary>
     /// <remarks>
@@ -1067,20 +1407,24 @@ public sealed class DateFormatterTests
     /// - Read the counts the tool wrote; write the day of the moment of the class with d for every entry and root.
     ///
     /// Expected:
-    /// - 149 name tables and 166 pattern tables (counted from the json: locales whose bytes are the same share one); each day 3 is the
-    ///   digit three of the locale's number table.
+    /// - 149 name tables, 168 pattern tables, and 164 interval tables (counted from the json: locales whose bytes are the same share
+    ///   one); each day 3 is the digit three of the locale's number table.
     /// </remarks>
     [Fact]
     public void CldrData_DateTables_HoldTheJsonsValues()
     {
         Assert.Equal(149, CldrData.DateNameTableCount);
         Assert.Equal(168, CldrData.DatePatternTableCount);
+        Assert.Equal(164, CldrData.DateIntervalTableCount);
         foreach (LocaleData data in CldrLocales.All.Append(LocaleData.Root))
         {
             string day = Write(DateFormatter.FromSkeleton(data, "d", false), Moment);
             Assert.Contains((char)(data.Numbers.Zero + 3), day);
         }
     }
+
+    // A clock written yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss.
+    private static DateTime ParseClock(string text) => DateTime.Parse(text, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     private static string Write(DateFormatter format, DateTimeOffset value)
     {
@@ -1138,20 +1482,59 @@ public sealed class DateFormatterTests
         for (int i = 0; !reader.End; i++)
         {
             string text = reader.ReadString();
-            byte[] utf8 = Encoding.UTF8.GetBytes(i == index ? pattern : text);
-            bytes.Add((byte)utf8.Length);
-            bytes.AddRange(utf8);
+            AddString(bytes, i == index ? pattern : text);
         }
 
         return [.. bytes];
     }
 
+    // An interval table (tools/CldrTableGen/DateTables.cs) whose 40 entries are the same: the fallback, then for each entry the count
+    // of records, the field bytes, and the records, each a kind byte and its strings (one for kind 2, the fallback with a pattern).
+    private static byte[] IntervalTableOf(string fallback, int[] fields, params (int Kind, string First, string Second)[] records)
+    {
+        var bytes = new List<byte>();
+        AddString(bytes, fallback);
+        for (int entry = 0; entry < 40; entry++)
+        {
+            bytes.Add((byte)records.Length);
+            foreach (int field in fields)
+            {
+                bytes.Add((byte)field);
+            }
+
+            foreach ((int kind, string first, string second) in records)
+            {
+                bytes.Add((byte)kind);
+                AddString(bytes, first);
+                if (kind != 2)
+                {
+                    AddString(bytes, second);
+                }
+            }
+        }
+
+        return [.. bytes];
+    }
+
+    // A string of a table: a length byte and its UTF-8.
+    private static void AddString(List<byte> bytes, string text)
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes(text);
+        bytes.Add((byte)utf8.Length);
+        bytes.AddRange(utf8);
+    }
+
     // The text with the marks of the class comment replaced by the characters they stand for.
     private static string Marked(string text) =>
-        text.Replace('_', (char)0x00A0).Replace('^', (char)0x202F).Replace('|', (char)0x200E).Replace('!', (char)0x200F).Replace('@', (char)0x061C);
+        text.Replace('_', (char)0x00A0)
+            .Replace('^', (char)0x202F)
+            .Replace('|', (char)0x200E)
+            .Replace('!', (char)0x200F)
+            .Replace('@', (char)0x061C)
+            .Replace('~', (char)0x2009);
 
-    // Tables that are en's but for the date pattern table, which the test gives.
-    private sealed class PatternLocaleData(byte[] patterns)
+    // Tables that are en's but for the date pattern table, which the test gives, and the interval table, when the test gives one.
+    private sealed class PatternLocaleData(byte[] patterns, byte[]? intervals = null)
         : LocaleData(Locale.Parse("en"), DayOfWeek.Sunday, 1, DayOfWeek.Saturday, DayOfWeek.Sunday)
     {
         internal override ReadOnlySpan<byte> NumberTable => CldrLocales.En.NumberTable;
@@ -1163,6 +1546,8 @@ public sealed class DateFormatterTests
         internal override ReadOnlySpan<byte> DateNameTable => CldrLocales.En.DateNameTable;
 
         internal override ReadOnlySpan<byte> DatePatternTable => patterns;
+
+        internal override ReadOnlySpan<byte> DateIntervalTable => intervals is null ? CldrLocales.En.DateIntervalTable : intervals;
 
         internal override PluralRules CreatePlurals() => new(Other, Other);
 
