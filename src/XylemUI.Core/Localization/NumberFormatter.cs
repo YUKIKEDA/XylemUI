@@ -35,17 +35,7 @@ public sealed class NumberFormatter
 
     private const char NarrowNoBreakSpace = (char)0x202F;
 
-    private const char FullWidthZero = (char)0xFF10;
-
-    private const char FullWidthNine = (char)0xFF19;
-
     private const char MinusSign = (char)0x2212;
-
-    private const char LeftToRightMark = (char)0x200E;
-
-    private const char RightToLeftMark = (char)0x200F;
-
-    private const char ArabicLetterMark = (char)0x061C;
 
     private static readonly NumberOptions DefaultOptions = new();
 
@@ -99,9 +89,9 @@ public sealed class NumberFormatter
         _plurals = plurals;
 
         // Parsing reads the signs without the bidi marks CLDR puts in them (Issue #906).
-        _parseMinus = WithoutBidiMarks(symbols.Minus);
-        _parsePlus = WithoutBidiMarks(symbols.Plus);
-        _parsePercent = WithoutBidiMarks(symbols.Percent);
+        _parseMinus = ParseText.WithoutBidiMarks(symbols.Minus);
+        _parsePlus = ParseText.WithoutBidiMarks(symbols.Plus);
+        _parsePercent = ParseText.WithoutBidiMarks(symbols.Percent);
     }
 
     private enum NumberKind : byte
@@ -865,7 +855,7 @@ public sealed class NumberFormatter
         {
             Span<char> plain = buffer[..(buffer.Length / 2)];
             Span<char> ascii = buffer[(buffer.Length / 2)..];
-            int plainLength = WithoutBidiMarks(text, plain);
+            int plainLength = ParseText.WithoutBidiMarks(text, plain);
 
             // double.TryParse gives true and an infinity for digits past the range of double (PR #944's review: a 1 and 400 zeros);
             // the design reads no infinity.
@@ -982,46 +972,8 @@ public sealed class NumberFormatter
         return _parseMinus is [MinusSign] && text.Length > 0 && text[0] == '-' ? 1 : 0;
     }
 
-    // The text without the bidi marks CLDR puts in symbols (U+200E, U+200F, U+061C), which parsing skips: UTS #35 part 3 says that
-    // lenient parsing should ignore bidi format characters.
-    private static int WithoutBidiMarks(ReadOnlySpan<char> text, Span<char> destination)
-    {
-        int length = 0;
-        foreach (char character in text)
-        {
-            if (!IsBidiMark(character))
-            {
-                destination[length++] = character;
-            }
-        }
-
-        return length;
-    }
-
-    private static string WithoutBidiMarks(string text)
-    {
-        Span<char> buffer = text.Length <= 64 ? stackalloc char[64] : new char[text.Length];
-        return new string(buffer[..WithoutBidiMarks(text, buffer)]);
-    }
-
-    private static bool IsBidiMark(char character) => character is LeftToRightMark or RightToLeftMark or ArabicLetterMark;
-
     // The value of a locale's digit, an ASCII digit, or a full-width digit (U+FF10 to U+FF19); -1 for another character.
-    private int DigitValue(char character)
-    {
-        if (char.IsAsciiDigit(character))
-        {
-            return character - '0';
-        }
-
-        if (character is >= FullWidthZero and <= FullWidthNine)
-        {
-            return character - FullWidthZero;
-        }
-
-        int offset = character - _symbols.Zero;
-        return offset is >= 0 and <= 9 ? offset : -1;
-    }
+    private int DigitValue(char character) => ParseText.DigitValue(character, _symbols.Zero);
 
     // The length of the group separator at a position, or 0. Where the separator is U+00A0 or U+202F, U+0020 and the other of the two
     // stand for it: a user types a space, and text pasted from elsewhere may have either no-break space (fr groups with U+202F, ru and
